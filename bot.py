@@ -6,13 +6,12 @@ from flask import Flask
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# --- خادم ويب مصغر لإرضاء موقع Render وتحويله للأخضر Live ---
 app = Flask('')
 
 
 @app.route('/')
 def home():
-  return "Bot is active and running!"
+  return 'Bot is active and running!'
 
 
 def run_web():
@@ -20,7 +19,6 @@ def run_web():
   app.run(host='0.0.0.0', port=port)
 
 
-# --- إعدادات البوت والتوكن الخاص بك ---
 TOKEN = '8734379872:AAH9eYSzblCoQec4nLYxwnCgbMcgz2kacY8'
 ADMIN_ID = 7753870725
 
@@ -259,7 +257,6 @@ def handle_all_messages(message):
     )
 
 
-# --- التشغيل المتزامن لخادم الويب وبوت التليجرام ---
 if __name__ == '__main__':
   t = Thread(target=run_web)
   t.start()
