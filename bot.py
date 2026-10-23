@@ -1,33 +1,30 @@
-import telebot
-from telebot import types
-import requests
+import os
 import time
 import random
+import telebot
+from flask import Flask, request
 
 # =========================================================
-# ⚙️ التوكن المعتمد والبيانات الخاصة بك
+# ⚙️ الإعدادات والبيانات الخاصة بك
 # =========================================================
 API_TOKEN = '8734379872:AAFpX_ZqN0_mdJhZW2gj1yiNYJDIAVUqp18' 
-
-# معرف الوكالة الخاص بك في iChancy:
 AGENT_ID = "2826132-odai1@agents.nps"
 
-# متغيرات النظام (يمكنك التحكم بها عبر التلغرام بأمر /admin)
 SETTINGS = {
-    "maintenance": False,
+    "maintenance": False, # وضع الصيانة (True = مفعّل, False = معطّل)
     "sham_cash": "يرجى التواصل مع الإدارة",
     "syriatel_cash": "يرجى التواصل مع الإدارة",
     "referral_url": "https://t.me/odairobertbot?start="
 }
 
-# الحدود المالية (بالعملة الجديدة)
-MIN_DEPOSIT = 250        # أدنى شحن (250 ليرة جديدة)
-MIN_WITHDRAW = 500       # أدنى سحب (500 ليرة جديدة)
+MIN_DEPOSIT = 250        
+MIN_WITHDRAW = 500       
 
 bot = telebot.TeleBot(API_TOKEN)
+app = Flask(__name__)
 
 # =========================================================
-# 🛡️ دالة فحص وضع الصيانة
+# 🛡️ فحص وضع الصيانة
 # =========================================================
 def check_maintenance(message):
     if SETTINGS["maintenance"]:
@@ -38,6 +35,20 @@ def check_maintenance(message):
         )
         return True
     return False
+
+# =========================================================
+# 🌐 مسار استقبال التحديثات من تليجرام (Webhook)
+# =========================================================
+@app.route(f'/{API_TOKEN}', methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "OK", 200
+
+@app.route('/')
+def index():
+    return "Bot is running perfectly!", 200
 
 # =========================================================
 # 👑 لوحة تحكم الإدارة
@@ -83,20 +94,20 @@ def set_syriatel_cash(message):
         bot.send_message(message.chat.id, f"✅ تم تحديث سيرياتل كاش إلى: `{new_val}`", parse_mode="Markdown")
 
 # =========================================================
-# 📱 القائمة الرئيسية للأزرار (تم إصلاح صياغة السطور)
+# 📱 القائمة الرئيسية للأزرار
 # =========================================================
 def main_keyboard():
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn1 = types.KeyboardButton("👤 إنشاء حساب")
-    btn2 = types.KeyboardButton("💳 شحن الرصيد")
-    btn3 = types.KeyboardButton("💸 سحب الرصيد")
-    btn4 = types.KeyboardButton("🎰 عجلة الفرصة")
-    btn5 = types.KeyboardButton("🎁 إهداء صديق")
-    btn6 = types.KeyboardButton("👥 نظام الإحالات")
-    btn7 = types.KeyboardButton("🎁 قسم الهدايا")
-    btn8 = types.KeyboardButton("📊 حسابي والمعلومات")
-    btn9 = types.KeyboardButton("📜 شروط الاستخدام")
-    btn10 = types.KeyboardButton("🗑 طلب حذف الحساب")
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn1 = telebot.types.KeyboardButton("👤 إنشاء حساب")
+    btn2 = telebot.types.KeyboardButton("💳 شحن الرصيد")
+    btn3 = telebot.types.KeyboardButton("💸 سحب الرصيد")
+    btn4 = telebot.types.KeyboardButton("🎰 عجلة الفرصة")
+    btn5 = telebot.types.KeyboardButton("🎁 إهداء صديق")
+    btn6 = telebot.types.KeyboardButton("👥 نظام الإحالات")
+    btn7 = telebot.types.KeyboardButton("🎁 قسم الهدايا")
+    btn8 = telebot.types.KeyboardButton("📊 حسابي والمعلومات")
+    btn9 = telebot.types.KeyboardButton("📜 شروط الاستخدام")
+    btn10 = telebot.types.KeyboardButton("🗑 طلب حذف الحساب")
     
     markup.add(btn1, btn2)
     markup.add(btn3, btn4)
@@ -106,14 +117,14 @@ def main_keyboard():
     return markup
 
 # =========================================================
-# 🚀 الترحيب ورسالة الشروط والأحكام الرسمية
+# 🚀 الترحيب ورسالة الشروط والأحكام
 # =========================================================
 @bot.message_handler(commands=['start'])
 def send_terms(message):
     if check_maintenance(message): return
     
-    markup = types.InlineKeyboardMarkup()
-    btn_accept = types.InlineKeyboardButton("✅ موافقة على الشروط", callback_data="accept_terms")
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn_accept = telebot.types.InlineKeyboardButton("✅ موافقة على الشروط", callback_data="accept_terms")
     markup.add(btn_accept)
     
     terms_text = (
@@ -132,9 +143,9 @@ def send_terms(message):
         "6️⃣ يرجى التأكد دائماً من عنوان شام كاش وعناوين العملات الرقمية قبل التحويل.\n\n"
         "7️⃣ عند التحويل من شام كاش لا تقم أبداً بإرسال ملاحظات تجنباً للحظر.\n\n"
         "📌 **ملاحظة مهمة:** عند الاستفادة من البونص الترحيبي شرط السحب يجب أن يكون ضعف إجمالي المبلغ المشحون.\n\n"
-        "⛔️ **تنبيه:** أي محاولة للتّحايل ستؤدي إلى إيقاف الحساب وتجميد الأرصدة."
+        "⛔️ **تنبيه:** أي محاولة للتّحايل أو مخالفة الشروط ستؤدي إلى إيقاف الحساب وتجميد الأرصدة."
     )
-    bot.send_message(message.chat.id, terms_text, reply_markup=markup)
+    bot.send_message(message.chat.id, terms_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: call.data == "accept_terms")
 def terms_accepted(call):
@@ -189,13 +200,13 @@ def deposit_info(message):
         f"📍 **عناوين الدفع المتاحة:**\n"
         f"• **شام كاش:** `{SETTINGS['sham_cash']}`\n"
         f"• **سيرياتل كاش:** `{SETTINGS['syriatel_cash']}`\n\n"
-        f"🛑 **تنبيه شام كاش:** عند التحويل لا تقم أبداً بإرسال ملاحظات تجنباً للحظر.\n\n"
+        f"🛑 **تنبيه شام كاش:** لا تضف أي ملاحظات أثناء التحويل تجنباً للحظر.\n\n"
         f"بعد التحويل أرسل صورة الإشعار هنا لتأكيد الشحن."
     )
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 # =========================================================
-# 💸 سحب الرصيد والعمولات
+# 💸 سحب الرصيد
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "💸 سحب الرصيد")
 def withdraw_info(message):
@@ -205,8 +216,7 @@ def withdraw_info(message):
         f"⚠️ **الحد الأدنى للسحب:** {MIN_WITHDRAW} ليرة جديدة.\n\n"
         f"💥 **نسب عمولة السحب المعتمدة:**\n"
         f"• **10%** على العمليات حتى 50 مليون ليرة.\n"
-        f"• **15%** من 50 مليون حتى 150 مليون ليرة.\n"
-        f"• **20%** لأكثر من 150 مليون ليرة.\n\n"
+        f"• **15%** من 50 مليون حتى 150 مليون ليرة.\n\n"
         f"أرسل المبلغ المطلوب سحبه بالعملة الجديدة الآن:"
     )
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
@@ -220,13 +230,13 @@ def referral_info(message):
     user_link = f"{SETTINGS['referral_url']}{message.from_user.id}"
     text = (
         f"👥 **نظام الإحالات ودعوة الأصدقاء:**\n\n"
-        f"⚠️ تُحتسب أرباح الإحالة فقط بعد تسجيل **3 إحالات نشطة** أو أكثر.\n\n"
+        f"⚠️ تُحتسب أرباح الإحالة بعد تسجيل **3 إحالات نشطة** أو أكثر.\n\n"
         f"🔗 **رابط الدعوة الخاص بك:**\n`{user_link}`"
     )
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 # =========================================================
-# 📊 عرض تفاصيل الحساب
+# 📊 عرض الحساب
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "📊 حسابي والمعلومات")
 def show_account_info(message):
@@ -239,25 +249,21 @@ def show_account_info(message):
     )
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-# =========================================================
-# 📜 زر الشروط في القائمة
-# =========================================================
 @bot.message_handler(func=lambda message: message.text == "📜 شروط الاستخدام")
 def show_terms_only(message):
     send_terms(message)
 
 # =========================================================
-# 🔄 حلقة التشغيل التلقائي الآمنة
+# 🚀 التشغيل التلقائي عبر Webhook على Render
 # =========================================================
 if __name__ == '__main__':
-    try:
+    # تأكد من إضافة flask إلى ملف requirements.txt
+    RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
+    if RENDER_EXTERNAL_URL:
         bot.remove_webhook()
-    except Exception:
-        pass
-        
-    while True:
-        try:
-            bot.polling(none_stop=True, interval=2, timeout=20)
-        except Exception:
-            time.sleep(5)
+        time.sleep(1)
+        bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{API_TOKEN}")
+    
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
     
