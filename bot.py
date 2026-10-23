@@ -40,7 +40,8 @@ settings = {
 user_balances = {ADMIN_ID: 5000}
 user_spins = {}
 user_states = {}
-user_accounts = {}
+user_accounts = {}  # تخزين بيانات الحسابات المعتمدة
+next_custom_id = 1001  # بدء معرّفات الحسابات المخصصة من 1001
 
 
 # --- القوائم والأزرار ---
@@ -159,7 +160,7 @@ def add_free_spin_on_deposit(user_id):
 
 
 # ==========================================
-# 3. 🌟 عجلة الفرصة (مع ضبط الاحتمالات)
+# 3. 🌟 عجلة الفرصة (المشوقة)
 # ==========================================
 @bot.message_handler(
     func=lambda m: m.text
@@ -231,14 +232,13 @@ def process_spin(call):
 
   spins_data['spins_left'] -= 1
 
-  # مصفوفة الجوائز مضبوطة: التركيز الثقيل على حظ أوفر، لفة مجانية، و5,000 فقط
   prizes = [
-      ('❌ حظ أوفر، خيرها في غيرها!', 65),  # 65% حظ أوفر
-      ('🎟️ مبروك! ربحت لفة مجانية إضافية!', 25),  # 25% لفة مجانية
-      ('🎁 مبروك! ربحت 5,000 ليرة/نقطة!', 10),  # 10% ربح 5000
-      ('🎁 مبروك! ربحت 10,000 ليرة/نقطة!', 0),  # شكليات فقط (0%)
-      ('🎁 مبروك! ربحت 25,000 ليرة/نقطة!', 0),  # شكليات فقط (0%)
-      ('🎁 🎉 بالجائزة الكبرى! ربحت 1,000,000!', 0),  # شكليات فقط (0%)
+      ('❌ حظ أوفر، خيرها في غيرها!', 65),
+      ('🎟️ مبروك! ربحت لفة مجانية إضافية!', 25),
+      ('🎁 مبروك! ربحت 5,000 ليرة/نقطة!', 10),
+      ('🎁 مبروك! ربحت 10,000 ليرة/نقطة!', 0),
+      ('🎁 مبروك! ربحت 25,000 ليرة/نقطة!', 0),
+      ('🎁 🎉 بالجائزة الكبرى! ربحت 1,000,000!', 0),
   ]
 
   prize_list, weights = zip(*prizes)
@@ -304,10 +304,11 @@ def handle_all_messages(message):
   )
   state = user_states.get(user_id)
 
+  # --- إنشاء الحساب (اسم المستخدم + كلمة السر) ---
   if text == '👤 إنشاء حساب':
-    if user_id in user_accounts:
+    if user_id in user_accounts and user_accounts[user_id].get('approved'):
       acc = user_accounts[user_id]
-      info_msg = f"👤 **حسابك المسجل سابقاً:**\n\n📌 الاسم: `{acc['name']}`\n🏛️ البلدية: `{acc['city']}`\n🔑 كلمة السر: `{acc['pass']}`"
+      info_msg = f"👤 **حسابك المسجل والمفعل:**\n\n🆔 **معرف الحساب الخاص (ID):** `{acc['custom_id']}`\n📌 **اسم المستخدم:** `{acc['username']}`\n🔑 **كلمة السر:** `{acc['pass']}`"
       bot.send_message(
           message.chat.id,
           info_msg,
@@ -315,29 +316,21 @@ def handle_all_messages(message):
           parse_mode='Markdown',
       )
     else:
-      user_states[user_id] = 'reg_name'
-      user_accounts[user_id] = {}
+      user_states[user_id] = 'reg_username'
       bot.send_message(
           message.chat.id,
-          '👤 **خطوة 1/3:** يرجى إدخال **اسمك الكامل** الآن:',
+          '👤 **خطوة 1/2:** يرجى كتابة **اسم المستخدم (اليوزر)** الذي تريده:',
           reply_markup=back_menu(),
       )
 
-  elif state == 'reg_name':
-    user_accounts[user_id]['name'] = text
-    user_states[user_id] = 'reg_city'
-    bot.send_message(
-        message.chat.id,
-        '🏛️ **خطوة 2/3:** ممتاز! يرجى إدخال **اسم البلدية / المنطقة** الآن:',
-        reply_markup=back_menu(),
-    )
-
-  elif state == 'reg_city':
-    user_accounts[user_id]['city'] = text
+  elif state == 'reg_username':
+    if user_id not in user_accounts:
+      user_accounts[user_id] = {}
+    user_accounts[user_id]['username'] = text
     user_states[user_id] = 'reg_pass'
     bot.send_message(
         message.chat.id,
-        '🔑 **خطوة 3/3:** يرجى كتابة **كلمة السر** التي تفضلها لحسابك:',
+        '🔑 **خطوة 2/2:** يرجى إدخال **كلمة السر** للحساب:',
         reply_markup=back_menu(),
     )
 
@@ -346,14 +339,31 @@ def handle_all_messages(message):
     user_states[user_id] = None
     acc = user_accounts[user_id]
 
-    success_text = f"🎉 **تم إنشاء حسابك بنجاح!**\n\n📌 **الاسم:** `{acc['name']}`\n🏛️ **البلدية:** `{acc['city']}`\n🔑 **كلمة السر:** `{acc['pass']}`\n\nيمكنك الان شحن رصيدك والدخول لعجلة الفرصة!"
     bot.send_message(
         message.chat.id,
-        success_text,
+        '⏳ **تم إرسال طلب إنشاء الحساب إلى الأدمن للموافقة!**\nسيتم منحك'
+        ' معرّف ID خاص وتفعيل حسابك فور القبول.',
         reply_markup=main_menu(),
         parse_mode='Markdown',
     )
 
+    # إرسال طلب التفعيل للأدمن
+    admin_markup = InlineKeyboardMarkup()
+    admin_markup.add(
+        InlineKeyboardButton(
+            '✅ موافق (تفعيل وتخصيص ID)', callback_data=f'acc_app_{user_id}'
+        ),
+        InlineKeyboardButton(
+            '❌ غير موافق (رفض)', callback_data=f'acc_rej_{user_id}'
+        ),
+    )
+
+    admin_req = f'🔔 **طلب إنشاء حساب جديد!**\n\n📌 **اسم المستخدم (اليوزر):** `{acc["username"]}`\n🔑 **كلمة السر:** `{acc["pass"]}`\n📲 **التليجرام:** @{username} (`{user_id}`)'
+    bot.send_message(
+        ADMIN_ID, admin_req, reply_markup=admin_markup, parse_mode='Markdown'
+    )
+
+  # --- شحن الرصيد ---
   elif text == '💳 شحن الرصيد':
     markup = InlineKeyboardMarkup()
     if settings['syr_cash']:
@@ -428,17 +438,15 @@ def handle_all_messages(message):
 
 
 # ==========================================
-# 5. الكولباك وموافقة الأدمن
+# 5. الكولباك، موافقة الأدمن والرفض وتخصيص ID
 # ==========================================
-@bot.callback_query_handler(
-    func=lambda call: call.data
-    in ['pay_syr', 'pay_sham', 'pay_dollar']
-    or call.data.startswith('approve_dep_')
-)
-def handle_payment_callbacks(call):
+@bot.callback_query_handler(func=lambda call: True)
+def handle_all_callbacks(call):
+  global next_custom_id
   user_id = call.from_user.id
+  data = call.data
 
-  if call.data == 'pay_syr':
+  if data == 'pay_syr':
     user_states[user_id] = 'waiting_syr'
     bot.answer_callback_query(call.id)
     bot.send_message(
@@ -447,7 +455,7 @@ def handle_payment_callbacks(call):
         reply_markup=back_menu(),
     )
 
-  elif call.data == 'pay_sham':
+  elif data == 'pay_sham':
     user_states[user_id] = 'waiting_sham'
     bot.answer_callback_query(call.id)
     bot.send_message(
@@ -456,7 +464,7 @@ def handle_payment_callbacks(call):
         reply_markup=back_menu(),
     )
 
-  elif call.data == 'pay_dollar':
+  elif data == 'pay_dollar':
     user_states[user_id] = 'waiting_dollar'
     bot.answer_callback_query(call.id)
     bot.send_message(
@@ -465,12 +473,69 @@ def handle_payment_callbacks(call):
         reply_markup=back_menu(),
     )
 
-  elif call.data.startswith('approve_dep_'):
+  # --- موافقة الأدمن على إنشاء الحساب وتوليد ID فريد ---
+  elif data.startswith('acc_app_'):
     if user_id != ADMIN_ID:
       bot.answer_callback_query(call.id, 'غير مسموح لك!', show_alert=True)
       return
 
-    target_user_id = int(call.data.split('_')[2])
+    target_user_id = int(data.split('_')[2])
+    if target_user_id in user_accounts:
+      assigned_id = next_custom_id
+      next_custom_id += 1
+
+      user_accounts[target_user_id]['approved'] = True
+      user_accounts[target_user_id]['custom_id'] = assigned_id
+
+      bot.answer_callback_query(
+          call.id, f'✅ تم قبول الحساب وتعيين الرقم ID: {assigned_id}'
+      )
+      bot.edit_message_text(
+          call.message.text
+          + f'\n\n✅ **الحالة:** تم قبول الحساب وتفعيل المعرّف (`ID: {assigned_id}`).',
+          call.message.chat.id,
+          call.message.message_id,
+          parse_mode='Markdown',
+      )
+
+      try:
+        acc = user_accounts[target_user_id]
+        msg = f"🎉 **مبروك! تم تفعيل حسابك بنجاح!**\n\n🆔 **معرف الحساب الخاص بك (ID):** `{assigned_id}`\n📌 **اسم المستخدم:** `{acc['username']}`\n🔑 **كلمة السر:** `{acc['pass']}`\n\nيمكنك الآن استخدامه لشحن الرصيد ودخول عجلة الفرصة!"
+        bot.send_message(target_user_id, msg, parse_mode='Markdown')
+      except Exception:
+        pass
+
+  # --- رفض الأدمن ---
+  elif data.startswith('acc_rej_'):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, 'غير مسموح لك!', show_alert=True)
+      return
+
+    target_user_id = int(data.split('_')[2])
+    bot.answer_callback_query(call.id, '❌ تم رفض طلب الحساب!')
+    bot.edit_message_text(
+        call.message.text + '\n\n❌ **الحالة:** تم رفض الطلب.',
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown',
+    )
+
+    try:
+      bot.send_message(
+          target_user_id,
+          '❌ عذراً، تم رفض طلب إنشاء حسابك من قبل الأدمن.',
+          parse_mode='Markdown',
+      )
+    except Exception:
+      pass
+
+  # --- موافقة الأدمن على الشحن ---
+  elif data.startswith('approve_dep_'):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, 'غير مسموح لك!', show_alert=True)
+      return
+
+    target_user_id = int(data.split('_')[2])
     add_free_spin_on_deposit(target_user_id)
 
     bot.answer_callback_query(call.id, '✅ تم قبول الشحن وإضافة اللفة المجانية!')
@@ -484,7 +549,8 @@ def handle_payment_callbacks(call):
     try:
       bot.send_message(
           target_user_id,
-          '🎉 **مبروك!** تم قبول طلب شحنك بنجاح.\n🎟️ تم منحك **لفة مجانية** في عجلة الفرصة!',
+          '🎉 **مبروك!** تم قبول طلب شحنك بنجاح.\n🎟️ تم منحك **لفة مجانية** في'
+          ' عجلة الفرصة!',
           parse_mode='Markdown',
       )
     except Exception:
@@ -496,4 +562,4 @@ if __name__ == '__main__':
   t = Thread(target=run_web)
   t.start()
   bot.polling(none_stop=True)
-        
+    
