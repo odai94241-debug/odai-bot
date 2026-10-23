@@ -4,8 +4,13 @@ import random
 from threading import Thread
 from flask import Flask
 import telebot
-from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
+from telebot.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+)
 
+# --- خادم ويب مصغر لإرضاء موقع Render ---
 app = Flask('')
 
 
@@ -19,6 +24,7 @@ def run_web():
   app.run(host='0.0.0.0', port=port)
 
 
+# --- إعدادات البوت والتوكن الخاص بك ---
 TOKEN = '8734379872:AAH9eYSzblCoQec4nLYxwnCgbMcgz2kacY8'
 ADMIN_ID = 7753870725
 
@@ -33,8 +39,37 @@ settings = {
 
 user_balances = {ADMIN_ID: 5000}
 user_spins = {}
+user_states = {}  # لتتبع حالة المستخدم (هل يطلب إنشاء حساب أم شحن)
 
 
+# --- القائمة الرئيسية (الأزرار السفلية) ---
+def main_menu():
+  markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+  markup.add('👤 إنشاء حساب', '💳 شحن الرصيد')
+  markup.add('🎡 عجلة الحظ')
+  return markup
+
+
+# --- أمر البداية /start ---
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+  if settings['maintenance'] and message.from_user.id != ADMIN_ID:
+    bot.reply_to(
+        message, '🛠️ البوت متوقف حالياً للصيانة، يرجى العودة لاحقاً.'
+    )
+    return
+
+  bot.send_message(
+      message.chat.id,
+      'أهلاً بك في البوت الرسمي! استخدم الأزرار بالأسفل للتنقل بين إنشاء'
+      ' الحساب، شحن الرصيد، وعجلة الحظ:',
+      reply_markup=main_menu(),
+  )
+
+
+# ==========================================
+# 1. لوحة تحكم الأدمن (/admin)
+# ==========================================
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
   if message.from_user.id != ADMIN_ID:
@@ -107,6 +142,9 @@ def admin_callbacks(call):
   bot.answer_callback_query(call.id, '✅ تم تحديث الحالة بنجاح!')
 
 
+# ==========================================
+# 2. منح لفة مجانية عند قبول الشحن
+# ==========================================
 def add_free_spin_on_deposit(user_id):
   today = datetime.now().strftime('%Y-%m-%d')
   if user_id not in user_spins:
@@ -118,7 +156,10 @@ def add_free_spin_on_deposit(user_id):
       user_spins[user_id] = {'date': today, 'spins_left': 1}
 
 
-@bot.message_handler(func=lambda m: m.text in ['🎡 عجلة الحظ', '/spin', 'عجلة الحظ'])
+# ==========================================
+# 3. عجلة الحظ اليومية
+# ==========================================
+@bot.message_handler(func=lambda m: m.text in ['🎡 عجلة الحظ', '/spin'])
 def wheel_intro(message):
   chat_id = message.chat.id
   user_id = message.from_user.id
@@ -133,9 +174,9 @@ def wheel_intro(message):
 
   text = (
       '🎡 **عجلة الحظ اليومية (بالعملة الجديدة):**\n\n🔹 **النظام:** عند شحن رصيدك'
-      ' تحصل على لفة مجانية لليوم فقط بدون أي خصم.\n🎁 **الجوائز المتاحة:** (حظ'
-      ' أوفر ❌، لفة مجانية 🎟️، أو 50 ليرة سورية 💵 كحد أقصى).\n\n🎟️ **اللفات'
-      f' المتاحة لديك اليوم:** `{spins_left}` لفة.'
+      ' ويوافق عليه الأدمن تحصل على لفة مجانية لليوم بدون أي خصم.\n🎁 **الجوائز'
+      ' المتاحة:** (حظ أوفر ❌، لفة مجانية 🎟️، أو 50 ليرة سورية 💵 كحد'
+      f' أقصى).\n\n🎟️ **اللفات المتاحة لديك اليوم:** `{spins_left}` لفة.'
   )
 
   markup = InlineKeyboardMarkup()
@@ -148,7 +189,8 @@ def wheel_intro(message):
   else:
     markup.add(
         InlineKeyboardButton(
-            '❌ لا توجد لفات مجانية حالياً', callback_data='no_spins'
+            '❌ لا توجد لفات مجانية (اشحن رصيدك لتحصيلها)',
+            callback_data='no_spins',
         )
     )
 
@@ -164,7 +206,9 @@ def process_spin(call):
 
   if call.data == 'no_spins':
     bot.answer_callback_query(
-        call.id, '⚠️ ليس لديك لفات مجانية اليوم!', show_alert=True
+        call.id,
+        '⚠️ ليس لديك لفات مجانية اليوم! اشحن رصيدك للحصول على لفتك.',
+        show_alert=True,
     )
     return
 
@@ -223,42 +267,98 @@ def process_spin(call):
   bot.answer_callback_query(call.id, 'تمت العملية بنجاح!')
 
 
+# ==========================================
+# 4. معالجة الأزرار (إنشاء حساب وشحن الرصيد)
+# ==========================================
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
   if settings['maintenance'] and message.from_user.id != ADMIN_ID:
-    bot.reply_to(message, '🛠️ البوت متوقف حالياً للصيانة، يرجى العودة لاحقاً.')
+    bot.reply_to(
+        message,
+        '🛠️ البوت متوقف حالياً للصيانة وتحديث النظام، يرجى العودة لاحقاً.',
+    )
     return
 
   text = message.text
+  user_id = message.from_user.id
+  username = (
+      message.from_user.username
+      if message.from_user.username
+      else message.from_user.first_name
+  )
 
-  if text == 'شحن عبر سيريتل كاش':
-    if not settings['syr_cash']:
-      bot.reply_to(message, '⚠️ عذراً، الشحن عبر سيريتل كاش متوقف مؤقتاً للصيانة.')
-      return
-    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل سيريتل كاش...')
-
-  elif text == 'شحن عبر شام كاش':
-    if not settings['sham_cash']:
-      bot.reply_to(message, '⚠️ عذراً، الشحن عبر شام كاش متوقف مؤقتاً للصيانة.')
-      return
-    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل شام كاش...')
-
-  elif text == 'شحن عبر شام كاش دولار':
-    if not settings['sham_dollar']:
-      bot.reply_to(
-          message, '⚠️ عذراً، الشحن عبر شام كاش دولار متوقف مؤقتاً للصيانة.'
-      )
-      return
-    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل شام كاش دولار ($)...')
-
-  else:
+  # 1. زر إنشاء حساب
+  if text == '👤 إنشاء حساب':
+    user_states[user_id] = 'creating_account'
     bot.reply_to(
-        message, 'أهلاً بك في البوت! استخدم الأزرار أو اكتب "عجلة الحظ".'
+        message,
+        '👤 **قسم إنشاء الحساب:**\nأهلاً بك! لقد تم تجهيز حسابك بنجاح في النظام.'
+        ' يمكنك الآن شحن رصيدك أو الاستفادة من عجلة الحظ.',
+        reply_markup=main_menu(),
+        parse_mode='Markdown',
     )
 
+  # 2. زر شحن الرصيد (يعرض وسائل الدفع المتاحة)
+  elif text == '💳 شحن الرصيد':
+    markup = InlineKeyboardMarkup()
+    if settings['syr_cash']:
+      markup.add(
+          InlineKeyboardButton(
+              '🟢 شحن عبر سيريتل كاش', callback_data='pay_syr'
+          )
+      )
+    if settings['sham_cash']:
+      markup.add(
+          InlineKeyboardButton('🟢 شحن عبر شام كاش', callback_data='pay_sham')
+      )
+    if settings['sham_dollar']:
+      markup.add(
+          InlineKeyboardButton(
+              '🟢 شحن عبر شام كاش دولار ($)', callback_data='pay_dollar'
+          )
+      )
 
-if __name__ == '__main__':
-  t = Thread(target=run_web)
-  t.start()
-  bot.polling(none_stop=True)
+    if not markup.keyboard:
+      bot.reply_to(
+          message,
+          '⚠️ عذراً، جميع وسائل الدفع متوقفة مؤقتاً للصيانة من قبل الأدمن.',
+      )
+      return
+
+    bot.reply_to(
+        message,
+        '💳 **اختر وسيلة الدفع المناسبة لشحن رصيدك:**',
+        reply_markup=markup,
+        parse_mode='Markdown',
+    )
+
+  # 3. إرسال تفاصيل التحويل بعد اختيار وسيلة الدفع
+  elif user_states.get(user_id) in ['waiting_syr', 'waiting_sham', 'waiting_dollar']:
+    method = user_states[user_id]
+    method_name = (
+        'سيريتل كاش'
+        if method == 'waiting_syr'
+        else ('شام كاش' if method == 'waiting_sham' else 'شام كاش دولار ($)')
+    )
+
+    # إعادة تعيين الحالة
+    user_states[user_id] = None
+
+    # إشعار المستخدم بأن طلبه أُرسل للأدمن
+    bot.reply_to(
+        message,
+        '⏳ **تم إرسال طلب الشحن بنجاح!**\nتم تحويل تفاصيل التحويل إلى الأدمن'
+        ' للمراجعة، وسيتم إضافة الرصيد ومنحك لفة مجانية فور الموافقة.',
+        reply_markup=main_menu(),
+        parse_mode='Markdown',
+    )
+
+    # إرسال الطلب للأدمن مع زر "موافق" الفوري
+    admin_notification = (
+        f'🔔 **طلب شحن جديد بانتظار الموافقة!**\n\n👤 المستخدم: @{username}'
+        f' (ID: `{user_id}`)\n💳 الوسيلة: {method_name}\n📝 التفاصيل:\n{text}'
+    )
+
+    admin_markup = InlineKeyboardMarkup()
+    admin_
     
