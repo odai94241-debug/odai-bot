@@ -3,28 +3,22 @@ import random
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# توكن البوت ومعرف الأدمن الخاص بك (مضبوط بالكامل)
 TOKEN = '8734379872:AAH9eYSzblCoQec4nLYxwnCgbMcgz2kacY8'
 ADMIN_ID = 7753870725
 
 bot = telebot.TeleBot(TOKEN)
 
-# إعدادات البوت ولوحة التحكم (وضع الصيانة ووسائل الدفع: سيريتل، شام كاش، وشام كاش دولار)
 settings = {
-    'maintenance': False,  # False يعني يعمل، True يعني صيانة
-    'syr_cash': True,  # سيريتل كاش
-    'sham_cash': True,  # شام كاش (بالعملة الجديدة)
-    'sham_dollar': True,  # شام كاش دولار ($)
+    'maintenance': False,
+    'syr_cash': True,
+    'sham_cash': True,
+    'sham_dollar': True,
 }
 
-# أرصدة المستخدمين واللفات المجانية
-user_balances = {ADMIN_ID: 5000}  # رصيد تجريبي للأدمن
-user_spins = {}  # لتخزين اللفات المجانية اليومية
+user_balances = {ADMIN_ID: 5000}
+user_spins = {}
 
 
-# ==========================================
-# 1. لوحة تحكم الأدمن (عبر أمر /admin في تليجرام)
-# ==========================================
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
   if message.from_user.id != ADMIN_ID:
@@ -97,9 +91,6 @@ def admin_callbacks(call):
   bot.answer_callback_query(call.id, '✅ تم تحديث الحالة بنجاح!')
 
 
-# ==========================================
-# 2. دالة منح لفة مجانية عند إتمام الشحن
-# ==========================================
 def add_free_spin_on_deposit(user_id):
   today = datetime.now().strftime('%Y-%m-%d')
   if user_id not in user_spins:
@@ -111,9 +102,6 @@ def add_free_spin_on_deposit(user_id):
       user_spins[user_id] = {'date': today, 'spins_left': 1}
 
 
-# ==========================================
-# 3. عجلة الحظ (بالعملة الجديدة - بدون خصم رصيد)
-# ==========================================
 @bot.message_handler(func=lambda m: m.text in ['🎡 عجلة الحظ', '/spin', 'عجلة الحظ'])
 def wheel_intro(message):
   chat_id = message.chat.id
@@ -129,9 +117,9 @@ def wheel_intro(message):
 
   text = (
       '🎡 **عجلة الحظ اليومية (بالعملة الجديدة):**\n\n🔹 **النظام:** عند شحن رصيدك'
-      ' تحصل على لفة مجانية لليوم فقط بدون أي خصم من رصيدك.\n🎁 **الجوائز المتاحة'
-      ' فقط:** (حظ أوفر ❌، لفة مجانية 🎟️، أو 50 ليرة سورية 💵 كحد'
-      f' أقصى).\n\n🎟️ **اللفات المتاحة لديك اليوم:** `{spins_left}` لفة.'
+      ' تحصل على لفة مجانية لليوم فقط بدون أي خصم.\n🎁 **الجوائز المتاحة:** (حظ'
+      ' أوفر ❌، لفة مجانية 🎟️، أو 50 ليرة سورية 💵 كحد أقصى).\n\n🎟️ **اللفات'
+      f' المتاحة لديك اليوم:** `{spins_left}` لفة.'
   )
 
   markup = InlineKeyboardMarkup()
@@ -144,8 +132,7 @@ def wheel_intro(message):
   else:
     markup.add(
         InlineKeyboardButton(
-            '❌ لا توجد لفات مجانية (اشحن رصيدك لتحصيلها)',
-            callback_data='no_spins',
+            '❌ لا توجد لفات مجانية حالياً', callback_data='no_spins'
         )
     )
 
@@ -161,9 +148,7 @@ def process_spin(call):
 
   if call.data == 'no_spins':
     bot.answer_callback_query(
-        call.id,
-        '⚠️ ليس لديك لفات مجانية اليوم! اشحن رصيدك للحصول على لفتك.',
-        show_alert=True,
+        call.id, '⚠️ ليس لديك لفات مجانية اليوم!', show_alert=True
     )
     return
 
@@ -177,7 +162,6 @@ def process_spin(call):
 
   spins_data['spins_left'] -= 1
 
-  # الاحتمالات وضبط الجوائز بالعملة الجديدة (أقصى ربح 50 ليرة)
   prizes = [
       ('❌ حظ أوفر، خيرها في غيرها!', 55),
       ('🎟️ مبروك! ربحت لفة مجانية إضافية!', 25),
@@ -190,15 +174,15 @@ def process_spin(call):
   reward_note = ''
   if '50' in result:
     user_balances[user_id] = user_balances.get(user_id, 0) + 50
-    reward_note = '\n💰 تمت إضافة 50 ليرة إلى رصيدك الأساسي!'
+    reward_note = '\n💰 تمت إضافة 50 ليرة إلى رصيدك!'
   elif 'لفة مجانية' in result:
     spins_data['spins_left'] += 1
     reward_note = '\n🎟️ تمت إضافة اللفة المجانية لرصيدك!'
 
   remaining = spins_data['spins_left']
   result_text = (
-      f'🎡 **نتيجة عجلة الحظ:**\n\n{result}{reward_note}\n\n🎟️ **اللفات'
-      f' المتبقية لديك اليوم:** `{remaining}`'
+      f'🎡 **نتيجة عجلة الحظ:**\n\n{result}{reward_note}\n\n🎟️ **اللفات المتاحة'
+      f' اليوم:** `{remaining}`'
   )
 
   markup = InlineKeyboardMarkup()
@@ -223,63 +207,39 @@ def process_spin(call):
   bot.answer_callback_query(call.id, 'تمت العملية بنجاح!')
 
 
-# ==========================================
-# 4. استقبال الرسائل، الصيانة، ووسائل الدفع
-# ==========================================
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
   if settings['maintenance'] and message.from_user.id != ADMIN_ID:
-    bot.reply_to(
-        message,
-        '🛠️ البوت متوقف حالياً للصيانة وتحديث النظام، يرجى العودة لاحقاً.',
-    )
+    bot.reply_to(message, '🛠️ البوت متوقف حالياً للصيانة، يرجى العودة لاحقاً.')
     return
 
   text = message.text
 
   if text == 'شحن عبر سيريتل كاش':
     if not settings['syr_cash']:
-      bot.reply_to(
-          message,
-          '⚠️ عذراً، الشحن عبر سيريتل كاش متوقف مؤقتاً بسبب أعمال الصيانة.',
-      )
+      bot.reply_to(message, '⚠️ عذراً، الشحن عبر سيريتل كاش متوقف مؤقتاً للصيانة.')
       return
-    bot.reply_to(
-        message,
-        '💳 أرسل تفاصيل ورقم تحويل سيريتل كاش (بالقيمة الجديدة بعد حذف'
-        ' الصفرين)...',
-    )
+    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل سيريتل كاش...')
 
   elif text == 'شحن عبر شام كاش':
     if not settings['sham_cash']:
-      bot.reply_to(
-          message, '⚠️ عذراً، الشحن عبر شام كاش متوقف مؤقتاً حالياً للصيانة.'
-      )
+      bot.reply_to(message, '⚠️ عذراً، الشحن عبر شام كاش متوقف مؤقتاً للصيانة.')
       return
-    bot.reply_to(
-        message,
-        '💳 أرسل تفاصيل ورقم تحويل شام كاش (بالقيمة الجديدة بعد حذف الصفرين)...',
-    )
+    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل شام كاش...')
 
   elif text == 'شحن عبر شام كاش دولار':
     if not settings['sham_dollar']:
       bot.reply_to(
-          message,
-          '⚠️ عذراً، الشحن عبر شام كاش دولار متوقف مؤقتاً حالياً للصيانة.',
+          message, '⚠️ عذراً، الشحن عبر شام كاش دولار متوقف مؤقتاً للصيانة.'
       )
       return
-    bot.reply_to(
-        message, '💳 أرسل تفاصيل ورقم تحويل شام كاش دولار ($)...'
-    )
+    bot.reply_to(message, '💳 أرسل تفاصيل ورقم تحويل شام كاش دولار ($)...')
 
   else:
     bot.reply_to(
-        message,
-        'أهلاً بك في البوت! استخدم الأزرار أو القائمة الرئيسية أو اكتب "عجلة'
-        ' الحظ".',
+        message, 'أهلاً بك في البوت! استخدم الأزرار أو اكتب "عجلة الحظ".'
     )
 
 
-# تشغيل البوت باستمرار
 bot.polling(none_stop=True)
     
