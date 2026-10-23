@@ -41,7 +41,7 @@ user_balances = {ADMIN_ID: 5000}
 user_spins = {}
 user_states = {}
 user_accounts = {}
-gift_data = {}  # مؤقت لتخزين بيانات الهدايا
+gift_data = {}
 next_custom_id = 1001
 
 
@@ -286,7 +286,6 @@ def handle_all_messages(message):
   user_id = message.from_user.id
   text = message.text
 
-  # زر الرجوع الموحد
   if text in ['🔙 رجوع للقائمة الرئيسية', 'رجوع']:
     user_states[user_id] = None
     bot.send_message(
@@ -309,7 +308,6 @@ def handle_all_messages(message):
   )
   state = user_states.get(user_id)
 
-  # 1. 👤 إنشاء حساب
   if text == '👤 إنشاء حساب':
     if user_id in user_accounts and user_accounts[user_id].get('approved'):
       acc = user_accounts[user_id]
@@ -366,7 +364,6 @@ def handle_all_messages(message):
         ADMIN_ID, admin_req, reply_markup=admin_markup, parse_mode='Markdown'
     )
 
-  # 2. 💳 شحن الرصيد
   elif text == '💳 شحن الرصيد':
     markup = InlineKeyboardMarkup()
     if settings['syr_cash']:
@@ -431,7 +428,6 @@ def handle_all_messages(message):
         parse_mode='Markdown',
     )
 
-  # 3. 💸 سحب الرصيد
   elif text == '💸 سحب الرصيد':
     user_states[user_id] = 'waiting_withdraw'
     bot.send_message(
@@ -454,7 +450,6 @@ def handle_all_messages(message):
         f' `{user_id}`)\n📝 التفاصيل والمبلغ:\n{text}',
     )
 
-  # 4. 🎁 إهداء صديق (رصيد / كود عبر إدخال الـ ID)
   elif text == '🎁 إهداء صديق':
     user_states[user_id] = 'gift_target_id'
     bot.send_message(
@@ -488,7 +483,6 @@ def handle_all_messages(message):
         f' `{user_id}`)\n🎯 المستلم (ID): `{target}`\n💰 المحتوى/الكود: {text}',
     )
 
-  # 5. 👥 نظام الإحالات
   elif text == '👥 نظام الإحالات':
     bot_info = bot.get_me()
     ref_link = f'https://t.me/{bot_info.username}?start={user_id}'
@@ -501,7 +495,6 @@ def handle_all_messages(message):
         parse_mode='Markdown',
     )
 
-  # 6. 🎁 قسم الهدايا
   elif text == '🎁 قسم الهدايا':
     bot.send_message(
         message.chat.id,
@@ -511,7 +504,6 @@ def handle_all_messages(message):
         reply_markup=main_menu(),
     )
 
-  # 7. 📊 حسابي والمعلومات
   elif text == '📊 حسابي والمعلومات':
     acc = user_accounts.get(user_id, {})
     c_id = acc.get('custom_id', 'لم يفعل بعد')
@@ -523,7 +515,6 @@ def handle_all_messages(message):
         message.chat.id, msg, reply_markup=main_menu(), parse_mode='Markdown'
     )
 
-  # 8. 🗑️ طلب حذف الحساب
   elif text == '🗑️ طلب حذف الحساب':
     user_states[user_id] = 'waiting_delete'
     bot.send_message(
@@ -672,4 +663,8 @@ def handle_all_callbacks(call):
 
 
 # --- التشغيل المتزامن للخادم والبوت ---
-if __name__ ==
+if __name__ == '__main__':
+  t = Thread(target=run_web)
+  t.start()
+  bot.polling(none_stop=True)
+    
