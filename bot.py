@@ -1,8 +1,26 @@
 from datetime import datetime
+import os
 import random
+from threading import Thread
+from flask import Flask
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+# --- خادم ويب مصغر لإرضاء موقع Render وتحويله للأخضر Live ---
+app = Flask('')
+
+
+@app.route('/')
+def home():
+  return "Bot is active and running!"
+
+
+def run_web():
+  port = int(os.environ.get('PORT', 10000))
+  app.run(host='0.0.0.0', port=port)
+
+
+# --- إعدادات البوت والتوكن الخاص بك ---
 TOKEN = '8734379872:AAH9eYSzblCoQec4nLYxwnCgbMcgz2kacY8'
 ADMIN_ID = 7753870725
 
@@ -241,5 +259,9 @@ def handle_all_messages(message):
     )
 
 
-bot.polling(none_stop=True)
+# --- التشغيل المتزامن لخادم الويب وبوت التليجرام ---
+if __name__ == '__main__':
+  t = Thread(target=run_web)
+  t.start()
+  bot.polling(none_stop=True)
     
