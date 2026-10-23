@@ -30,12 +30,12 @@ app = Flask(__name__)
 
 USER_BALANCES = {}
 USER_IDS = set()
-ADMIN_IDS = set()            # لتخزين أيدي الأدمن لتلقي الطلبات
+ADMIN_IDS = set()
 REGISTERED_USERNAMES = set()
 TEMP_USER_DATA = {}
 TEMP_DEPOSIT_DATA = {}
-PENDING_DEPOSITS = {}        # لتخزين طلبات الشحن المعلقة
-ADMIN_STATES = {}            # لحالة الأدمن (مثل إرسال سبب الرفض)
+PENDING_DEPOSITS = {}
+ADMIN_STATES = {}
 
 def check_maintenance(message):
     if SETTINGS["maintenance"] and message.chat.id not in ADMIN_IDS:
@@ -156,12 +156,12 @@ def save_new_syriatel(message):
     show_admin_menu(message.chat.id)
 
 # =========================================================
-# معالجة قبول أو رفض طلبات الشحن من الأدمن
+# مراجعة طلبات الشحن
 # =========================================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("dep_acc_") or call.data.startswith("dep_rej_"))
 def handle_deposit_review(call):
     data_parts = call.data.split("_")
-    action = data_parts[1] # acc or rej
+    action = data_parts[1]
     req_id = data_parts[2]
     
     if req_id not in PENDING_DEPOSITS:
@@ -172,15 +172,12 @@ def handle_deposit_review(call):
     user_id = dep_info["user_id"]
     amount = float(dep_info["amount"])
     
-    # تطبيق البونص إذا كان مفعّلاً
     final_amount = amount
     if SETTINGS["deposit_bonus_active"]:
         final_amount += amount * (SETTINGS["deposit_bonus_percentage"] / 100)
         
     if action == "acc":
-        # تحديث رصيد المستخدم محلياً
         USER_BALANCES[user_id] = USER_BALANCES.get(user_id, 0) + final_amount
-        
         bot.answer_callback_query(call.id, "✅ تمت الموافقة وإضافة الرصيد بنجاح!")
         bot.edit_message_text(
             call.message.text + f"\n\n🟢 **الحالة:** تم قبول الطلب وإضافة {final_amount} ليرة.",
@@ -188,8 +185,6 @@ def handle_deposit_review(call):
             message_id=call.message.message_id,
             parse_mode="Markdown"
         )
-        
-        # إشعار الزبون
         bot.send_message(
             user_id,
             f"🎉 **مبروك! تم قبول عملية الشحن الخاصة بك وإضافة الرصيد بنجاح.**\n\n"
@@ -199,9 +194,9 @@ def handle_deposit_review(call):
         del PENDING_DEPOSITS[req_id]
         
     elif action == "rej":
-        bot.answer_callback_query(call.id, "❌ يرجى إرسال سبب الرفض أو الخطأ للزبون:")
-        ADMIN_STATES[call.message.chat.id] = {"target_user": user_id, "req_id": req_id, "msg_id": call.message.message_id}
-        msg = bot.send_message(call.message.chat.id, "✍️ أرسل الآن سبب فشل العملية (مثال: رقم العملية خاطئ، أو القيمة غير مطابقة):")
+        bot.answer_callback_query(call.id, "❌ أرسل سبب الرفض للزبون:")
+        ADMIN_STATES[call.message.chat.id] = {"target_user": user_id, "req_id": req_id}
+        msg = bot.send_message(call.message.chat.id, "✍️ أرسل الآن سبب فشل العملية (مثال: رقم العملية خطأ أو القيمة غير مطابقة):")
         bot.register_next_step_handler(msg, process_admin_rejection_reason)
 
 def process_admin_rejection_reason(message):
@@ -214,7 +209,6 @@ def process_admin_rejection_reason(message):
     user_id = state["target_user"]
     req_id = state["req_id"]
     
-    # إشعار الزبون بالسبب
     bot.send_message(
         user_id,
         f"❌ **عذراً، فشلت عملية الشحن الخاصة بك!**\n\n"
@@ -222,7 +216,6 @@ def process_admin_rejection_reason(message):
         f"يرجى التأكد من البيانات وإعادة المحاولة أو التواصل مع الدعم الفني.",
         parse_mode="Markdown"
     )
-    
     bot.send_message(admin_id, "✅ تم إرسال سبب الرفض إلى الزبون بنجاح.")
     
     if req_id in PENDING_DEPOSITS:
@@ -432,7 +425,7 @@ def wheel_page():
     """
 
 # =========================================================
-# 💳 نظام شحن الرصيد التفاعلي (مراجعة الأدمن)
+# 💳 نظام شحن الرصيد التفاعلي
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "💳 شحن الرصيد")
 def deposit_info(message):
@@ -452,4 +445,12 @@ def deposit_info(message):
         parse_mode="Markdown"
     )
 
-@bot.callback_query_handler(func=lambda 
+@bot.callback_query_handler(func=lambda call: call.data in ["dep_sham", "dep_syriatel"])
+def deposit_method_chosen(call):
+    bot.answer_callback_query(call.id)
+    user_id = call.message.chat.id
+    
+    method = "شام كاش" if call.data == "dep_sham" else "سيرياتل كاش"
+    details = SETTINGS['sham_cash'] if call.data == "dep_sham" else SETTINGS['syriatel_cash']
+    
+    TEMP_DEPOSIT_DATA[user_id] = {"method": meth
