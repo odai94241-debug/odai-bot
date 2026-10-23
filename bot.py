@@ -10,11 +10,15 @@ from flask import Flask, request
 API_TOKEN = '8734379872:AAFpX_ZqN0_mdJhZW2gj1yiNYJDIAVUqp18' 
 AGENT_ID = "2826132-odai1@agents.nps"
 
+# إعدادات قابلة للتعديل من لوحة الأدمن التفاعلية
 SETTINGS = {
     "maintenance": False, # وضع الصيانة (True = مفعّل, False = معطّل)
     "sham_cash": "يرجى التواصل مع الإدارة",
     "syriatel_cash": "يرجى التواصل مع الإدارة",
-    "referral_url": "https://t.me/odairobertbot?start="
+    "referral_url": "https://t.me/odairobertbot?start=",
+    "deposit_bonus_active": False, # حالة عرض بونص الإيداع
+    "deposit_bonus_percentage": 10, # نسبة البونص
+    "support_link": "https://t.me/odairobertbot" # رابط أو معرف الدعم
 }
 
 MIN_DEPOSIT = 250        
@@ -22,6 +26,10 @@ MIN_WITHDRAW = 500
 
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
+
+# قواعد بيانات مؤقتة لتخزين الأرصدة وأيدي المستخدمين للإذاعة
+USER_BALANCES = {}
+USER_IDS = set()
 
 # =========================================================
 # 🛡️ فحص وضع الصيانة
@@ -51,47 +59,127 @@ def index():
     return "Bot is running perfectly!", 200
 
 # =========================================================
-# 👑 لوحة تحكم الإدارة
+# 👑 لوحة تحكم الإدارة التفاعلية
 # =========================================================
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
-    status = "🔴 مفعّل" if SETTINGS["maintenance"] else "🟢 معطّل"
+    show_admin_menu(message.chat.id)
+
+def show_admin_menu(chat_id, message_id=None):
+    m_status = "🔴 مفعّل (متوقف)" if SETTINGS["maintenance"] else "🟢 معطّل (يعمل)"
+    b_status = f"🟢 مفعّل ({SETTINGS['deposit_bonus_percentage']}%)" if SETTINGS["deposit_bonus_active"] else "🔴 معطّل"
+    
     text = (
-        f"⚙️ **لوحة تحكم الإدارة:**\n\n"
-        f"🛠 **وضع الصيانة:** {status}\n"
+        f"⚙️ **لوحة تحكم الإدارة التفاعلية:**\n\n"
+        f"🛠 **وضع الصيانة:** {m_status}\n"
+        f"🎯 **عرض بونص الإيداع:** {b_status}\n"
+        f"👥 **عدد المستخدمين المسجلين:** `{len(USER_IDS)}`\n"
+        f"🎧 **رابط الدعم الحالي:** `{SETTINGS['support_link']}`\n"
         f"💳 **شام كاش الحالي:** `{SETTINGS['sham_cash']}`\n"
         f"📱 **سيرياتل كاش الحالي:** `{SETTINGS['syriatel_cash']}`\n\n"
-        f"📌 **الأوامر السريعة للتحكم:**\n"
-        f"• `/maintenance_on` - تشغيل وضع الصيانة\n"
-        f"• `/maintenance_off` - إيقاف وضع الصيانة\n"
-        f"• `/set_sham 09xx...` - تغيير عنوان شام كاش\n"
-        f"• `/set_syriatel 09xx...` - تغيير رقم سيرياتل كاش"
+        f"👇 **اختر الإجراء المطلوب بالضغط على الزر:**"
     )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    markup = telebot.types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        telebot.types.InlineKeyboardButton("📢 إرسال إعلان/عرض لجميع المستخدمين", callback_data="admin_broadcast"),
+        telebot.types.InlineKeyboardButton("🎧 تعيين/تعديل رابط أو معرف الدعم", callback_data="admin_set_support"),
+        telebot.types.InlineKeyboardButton("🔄 تبديل وضع الصيانة (تشغيل / إيقاف)", callback_data="admin_toggle_m"),
+        telebot.types.InlineKeyboardButton("🎯 تفعيل/إيقاف عرض بونص الإيداع (10%)", callback_data="admin_toggle_bonus"),
+        telebot.types.InlineKeyboardButton("💳 تغيير عنوان شام كاش", callback_data="admin_set_sham"),
+        telebot.types.InlineKeyboardButton("📱 تغيير رقم سيرياتل كاش", callback_data="admin_set_syriatel")
+    )
+    
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=markup)
+            return
+        except Exception:
+            pass
+    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
 
-@bot.message_handler(commands=['maintenance_on'])
-def set_m_on(message):
-    SETTINGS["maintenance"] = True
-    bot.send_message(message.chat.id, "✅ تم تفعيل وضع الصيانة! البوت مغلق الآن أمام المستخدمين.")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
+def admin_callbacks(call):
+    if call.data == "admin_broadcast":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(
+            call.message.chat.id, 
+            "📢 **قسم الإذاعة الشاملة**\n\n"
+            "أرسل الآن الإعلان الذي تريد إرساله لجميع المستخدمين.\n"
+            "*(يمكنك إرسال نص فقط، أو إرسال **صورة** مع نص مرفق كشرح للإعلان)*:",
+            parse_mode="Markdown"
+        )
+        bot.register_next_step_handler(msg, execute_broadcast)
 
-@bot.message_handler(commands=['maintenance_off'])
-def set_m_off(message):
-    SETTINGS["maintenance"] = False
-    bot.send_message(message.chat.id, "✅ تم إيقاف وضع الصيانة! البوت يعمل الآن بشكل طبيعي.")
+    elif call.data == "admin_set_support":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "🎧 أرسل الآن **رابط أو معرف الدعم الجديد** (مثال: `@username` أو `https://t.me/...`):")
+        bot.register_next_step_handler(msg, save_new_support)
 
-@bot.message_handler(commands=['set_sham'])
-def set_sham_cash(message):
-    new_val = message.text.replace('/set_sham', '').strip()
-    if new_val:
-        SETTINGS["sham_cash"] = new_val
-        bot.send_message(message.chat.id, f"✅ تم تحديث شام كاش إلى: `{new_val}`", parse_mode="Markdown")
+    elif call.data == "admin_toggle_m":
+        SETTINGS["maintenance"] = not SETTINGS["maintenance"]
+        bot.answer_callback_query(call.id, "✅ تم تغيير وضع الصيانة بنجاح!")
+        show_admin_menu(call.message.chat.id, call.message.message_id)
+        
+    elif call.data == "admin_toggle_bonus":
+        SETTINGS["deposit_bonus_active"] = not SETTINGS["deposit_bonus_active"]
+        state_txt = "تفعيل" if SETTINGS["deposit_bonus_active"] else "إيقاف"
+        bot.answer_callback_query(call.id, f"✅ تم {state_txt} عرض بونص الإيداع بنجاح!")
+        show_admin_menu(call.message.chat.id, call.message.message_id)
+        
+    elif call.data == "admin_set_sham":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "💳 أرسل الآن **عنوان شام كاش الجديد** في رسالة:")
+        bot.register_next_step_handler(msg, save_new_sham)
+        
+    elif call.data == "admin_set_syriatel":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "📱 أرسل الآن **رقم سيرياتل كاش الجديد** في رسالة:")
+        bot.register_next_step_handler(msg, save_new_syriatel)
 
-@bot.message_handler(commands=['set_syriatel'])
-def set_syriatel_cash(message):
-    new_val = message.text.replace('/set_syriatel', '').strip()
-    if new_val:
-        SETTINGS["syriatel_cash"] = new_val
-        bot.send_message(message.chat.id, f"✅ تم تحديث سيرياتل كاش إلى: `{new_val}`", parse_mode="Markdown")
+def execute_broadcast(message):
+    success_count = 0
+    fail_count = 0
+    
+    bot.send_message(message.chat.id, "⏳ جاري إرسال الإذاعة لجميع المستخدمين، يرجى الانتظار...")
+
+    for uid in USER_IDS:
+        try:
+            if message.photo:
+                photo_id = message.photo[-1].file_id
+                caption = message.caption or ""
+                bot.send_photo(uid, photo_id, caption=caption, parse_mode="Markdown")
+            else:
+                bot.send_message(uid, message.text, parse_mode="Markdown")
+            success_count += 1
+        except Exception:
+            fail_count += 1
+
+    bot.send_message(
+        message.chat.id, 
+        f"📊 **تقرير الإذاعة:**\n\n"
+        f"✅ تم الإرسال بنجاح إلى: `{success_count}` مستخدم\n"
+        f"❌ فشل الإرسال إلى: `{fail_count}` مستخدم",
+        parse_mode="Markdown"
+    )
+    show_admin_menu(message.chat.id)
+
+def save_new_support(message):
+    new_val = message.text.strip()
+    SETTINGS["support_link"] = new_val
+    bot.send_message(message.chat.id, f"✅ تم تحديث رابط/معرف الدعم بنجاح إلى:\n`{new_val}`", parse_mode="Markdown")
+    show_admin_menu(message.chat.id)
+
+def save_new_sham(message):
+    new_val = message.text.strip()
+    SETTINGS["sham_cash"] = new_val
+    bot.send_message(message.chat.id, f"✅ تم تحديث شام كاش بنجاح إلى:\n`{new_val}`", parse_mode="Markdown")
+    show_admin_menu(message.chat.id)
+
+def save_new_syriatel(message):
+    new_val = message.text.strip()
+    SETTINGS["syriatel_cash"] = new_val
+    bot.send_message(message.chat.id, f"✅ تم تحديث سيرياتل كاش بنجاح إلى:\n`{new_val}`", parse_mode="Markdown")
+    show_admin_menu(message.chat.id)
 
 # =========================================================
 # 📱 القائمة الرئيسية للأزرار
@@ -107,13 +195,15 @@ def main_keyboard():
     btn7 = telebot.types.KeyboardButton("🎁 قسم الهدايا")
     btn8 = telebot.types.KeyboardButton("📊 حسابي والمعلومات")
     btn9 = telebot.types.KeyboardButton("📜 شروط الاستخدام")
-    btn10 = telebot.types.KeyboardButton("🗑 طلب حذف الحساب")
+    btn10 = telebot.types.KeyboardButton("🎧 خدمة الدعم")
+    btn11 = telebot.types.KeyboardButton("🗑 طلب حذف الحساب")
     
     markup.add(btn1, btn2)
     markup.add(btn3, btn4)
     markup.add(btn5, btn6)
     markup.add(btn7, btn8)
     markup.add(btn9, btn10)
+    markup.add(btn11)
     return markup
 
 # =========================================================
@@ -121,6 +211,7 @@ def main_keyboard():
 # =========================================================
 @bot.message_handler(commands=['start'])
 def send_terms(message):
+    USER_IDS.add(message.chat.id)
     if check_maintenance(message): return
     
     markup = telebot.types.InlineKeyboardMarkup()
@@ -131,139 +222,12 @@ def send_terms(message):
         "عند الضغط على زر موافقة فأنت توافق على الشروط القائمة ضمن البوت ويحق لك الإعتراض في حال مواجهة أي مشكلة خارجة عن شروط وقوانين البوت.\n"
         "يرجى قراءة هذه الشّروط قبل استخدام البوت لضمان تجربة آمنة وسلسة.\n\n"
         "البوت مخصّص لإنشاء الحسابات، والسّحب، والتعبئة الفورية لحسابات موقع Ichancy.\n\n"
-        "⚠️ **الشـروط:**\n\n"
-        "1️⃣ **منع الحسابات المتعدّدة:** إنشاء أكثر من حساب للشّخص الواحد مخالف للقوانين، وقد يؤدّي إلى حظر الحسابات المرتبطة وتجميد أرصدتها.\n\n"
-        "2️⃣ **تبديل طرق الدفع غير مسموح:** لا يُسمح بشحن رصيد وسحبه بغرض التبديل بين وسائل الدفع المختلفة.\n\n"
-        "3️⃣ **شروط أرباح الإحالات:** تُحتسب أرباح الإحالة فقط بعد تسجيل 3 إحالات نشطة أو أكثر.\n\n"
-        "4️⃣ **نسبة السحب:**\n"
-        " • 10% على جميع عمليات السحب حتى 50 مليون ليرة سورية.\n"
-        " • 15% على جميع عمليات السحب من 50 مليون حتى 150 مليون ليرة سورية.\n"
-        " • 20% على جميع عمليات السحب من 150 مليون ليرة سورية فما فوق.\n\n"
-        "5️⃣ لا تقم بالتحويل من الرمز #3040* ولا من كازية تحويل حين توقف تطبيق أقرب عن العمل.\n\n"
-        "6️⃣ يرجى التأكد دائماً من عنوان شام كاش وعناوين العملات الرقمية قبل التحويل.\n\n"
-        "7️⃣ عند التحويل من شام كاش لا تقم أبداً بإرسال ملاحظات تجنباً للحظر.\n\n"
-        "📌 **ملاحظة مهمة:** عند الاستفادة من البونص الترحيبي شرط السحب يجب أن يكون ضعف إجمالي المبلغ المشحون.\n\n"
-        "⛔️ **تنبيه:** أي محاولة للتّحايل أو مخالفة الشروط ستؤدي إلى إيقاف الحساب وتجميد الأرصدة."
-    )
-    bot.send_message(message.chat.id, terms_text, reply_markup=markup, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data == "accept_terms")
-def terms_accepted(call):
-    bot.answer_callback_query(call.id, "تم قبول الشروط بنجاح!")
-    bot.send_message(call.message.chat.id, "أهلاً بك! يمكنك الآن استخدام جميع ميزات البوت.", reply_markup=main_keyboard())
-
-# =========================================================
-# 👤 إنشاء حساب لاعب
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "👤 إنشاء حساب")
-def handle_create_account(message):
-    if check_maintenance(message): return
-    user_id = message.from_user.id
-    default_username = f"user_{user_id}"
-    default_password = f"Pass_{user_id}!2026"
-    
-    text = (
-        f"🎉 **تم إنشاء حسابك بنجاح!**\n\n"
-        f"🔗 **رابط الدخول:** https://ichancy.com\n"
-        f"👤 **اسم المستخدم:** `{default_username}`\n"
-        f"🔑 **كلمة السر:** `{default_password}`\n"
-        f"🏢 **الوكيل:** `{AGENT_ID}`"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-# =========================================================
-# 🎰 عجلة الفرصة
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "🎰 عجلة الفرصة")
-def spin_wheel(message):
-    if check_maintenance(message): return
-    msg = bot.send_message(message.chat.id, "🌀 **جاري تدوير العجلة...** 🎯")
-    time.sleep(1.5)
-    
-    prizes = [0, 10, 25, 50, 100]
-    won_amount = random.choice(prizes)
-    
-    if won_amount > 0:
-        bot.edit_message_text(f"🎉 **مبروك!** دارت العجلة ووقفت على:\n💰 **+{won_amount} ليرة جديدة**", chat_id=message.chat.id, message_id=msg.message_id)
-    else:
-        bot.edit_message_text("🌀 **حظاً أوفراً في المرة القادمة!**", chat_id=message.chat.id, message_id=msg.message_id)
-
-# =========================================================
-# 💳 شحن الرصيد
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "💳 شحن الرصيد")
-def deposit_info(message):
-    if check_maintenance(message): return
-    text = (
-        f"📥 **قسم شحن الرصيد**\n\n"
-        f"⚠️ **الحد الأدنى للشحن:** {MIN_DEPOSIT} ليرة جديدة.\n\n"
-        f"📍 **عناوين الدفع المتاحة:**\n"
-        f"• **شام كاش:** `{SETTINGS['sham_cash']}`\n"
-        f"• **سيرياتل كاش:** `{SETTINGS['syriatel_cash']}`\n\n"
-        f"🛑 **تنبيه شام كاش:** لا تضف أي ملاحظات أثناء التحويل تجنباً للحظر.\n\n"
-        f"بعد التحويل أرسل صورة الإشعار هنا لتأكيد الشحن."
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-# =========================================================
-# 💸 سحب الرصيد
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "💸 سحب الرصيد")
-def withdraw_info(message):
-    if check_maintenance(message): return
-    text = (
-        f"📤 **قسم سحب الرصيد**\n\n"
-        f"⚠️ **الحد الأدنى للسحب:** {MIN_WITHDRAW} ليرة جديدة.\n\n"
-        f"💥 **نسب عمولة السحب المعتمدة:**\n"
-        f"• **10%** على العمليات حتى 50 مليون ليرة.\n"
-        f"• **15%** من 50 مليون حتى 150 مليون ليرة.\n\n"
-        f"أرسل المبلغ المطلوب سحبه بالعملة الجديدة الآن:"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-# =========================================================
-# 👥 نظام الإحالات
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "👥 نظام الإحالات")
-def referral_info(message):
-    if check_maintenance(message): return
-    user_link = f"{SETTINGS['referral_url']}{message.from_user.id}"
-    text = (
-        f"👥 **نظام الإحالات ودعوة الأصدقاء:**\n\n"
-        f"⚠️ تُحتسب أرباح الإحالة بعد تسجيل **3 إحالات نشطة** أو أكثر.\n\n"
-        f"🔗 **رابط الدعوة الخاص بك:**\n`{user_link}`"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-# =========================================================
-# 📊 عرض الحساب
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "📊 حسابي والمعلومات")
-def show_account_info(message):
-    if check_maintenance(message): return
-    text = (
-        f"📊 **تفاصيل حسابك:**\n\n"
-        f"🆔 **الحساب الخاص (ID):** `{message.from_user.id}`\n"
-        f"👤 **اسم المستخدم:** {message.from_user.first_name}\n"
-        f"💰 **الرصيد الحالي:** 50 ليرة جديدة"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "📜 شروط الاستخدام")
-def show_terms_only(message):
-    send_terms(message)
-
-# =========================================================
-# 🚀 التشغيل التلقائي عبر Webhook على Render
-# =========================================================
-if __name__ == '__main__':
-    # تأكد من إضافة flask إلى ملف requirements.txt
-    RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
-    if RENDER_EXTERNAL_URL:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{API_TOKEN}")
-    
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
-    
+        "⚠️ **الشـروط والأحكام:**\n\n"
+        "1️⃣ **منع الحسابات المتعدّدة:** إنشاء أكثر من حساب للشّخص الواحد مخالف للقوانين.\n"
+        "2️⃣ **تبديل طرق الدفع غير مسموح:** لا يُسمح بشحن رصيد وسحبه بغرض التبديل بين وسائل الدفع.\n"
+        "3️⃣ **شروط أرباح الإحالات:** تُحتسب بعد تسجيل 3 إحالات نشطة أو أكثر.\n"
+        "4️⃣ **نسب عمولة السحب المعتمدة:**\n"
+        " • 10% على العمليات حتى 50 مليون ليرة سورية.\n"
+        " • 15% من 50 مليون حتى 150 مليون ليرة سورية.\n"
+        "
+        
