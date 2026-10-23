@@ -247,5 +247,13 @@ def show_account_info(message):
 def show_terms_only(message):
     send_terms(message)
 
-bot.polling(none_stop=True)
+# =========================================================
+# 🔄 تشغيل البوت مع تنظيف أي اتصالات قديمة
+# =========================================================
+if __name__ == '__main__':
+    try:
+        bot.remove_webhook()
+    except Exception:
+        pass
+    bot.infinity_polling(skip_pending=True)
     
