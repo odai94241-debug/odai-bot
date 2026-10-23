@@ -5,26 +5,83 @@ import time
 import random
 
 # =========================================================
-# ⚙️ لوحة التحكم والإعدادات المعتمدة
+# ⚙️ التوكن المعتمد والبيانات الخاصة بك
 # =========================================================
-# ⚠️ ضع التوكن الخاص ببوتك من BotFather هنا:
-API_TOKEN = 'ضع_توكن_البوت_هنا'
+API_TOKEN = '8734379872:AAFAHvAa6IY1P7lrzMEaBbUkVNVCDgI_lRs' 
 
-# 🏢 معرف الوكالة الخاص بك في iChancy (مبت):
+# معرف الوكالة الخاص بك في iChancy
 AGENT_ID = "2826132-odai1@agents.nps"
 ICHANCY_API_URL = "https://agents.ichancy.com/api"
-AGENT_ACCESS_TOKEN = "ضع_توكن_الوكيل_هنا"
 
-# 💳 عناوين التحويل والروابط (ضع أرقامك هنا):
-SHAM_CASH_ACCOUNT = "ضع_عنوان_شام_كاش_هنا"
-SYRIATEL_CASH_ACCOUNT = "ضع_رقم_سيرياتل_كاش_هنا"
-BOT_REFERRAL_BASE_URL = "https://t.me/odairobertbot?start="
+# متغيرات النظام (يمكنك التحكم بها من التلغرام عبر أمر /admin)
+SETTINGS = {
+    "maintenance": False, # وضع الصيانة (True = مفعّل, False = معطّل)
+    "sham_cash": "يرجى التواصل مع الإدارة",
+    "syriatel_cash": "يرجى التواصل مع الإدارة",
+    "referral_url": "https://t.me/odairobertbot?start="
+}
 
-# 💰 الحدود المالية بالعملة الجديدة (بعد حذف الصفرين):
-MIN_DEPOSIT = 250        # أدنى حد للشحن (250 ليرة جديدة = 25,000 قديمة)
-MIN_WITHDRAW = 500       # أدنى حد للسحب (500 ليرة جديدة = 50,000 قديمة)
+# الحدود المالية (بالعملة الجديدة)
+MIN_DEPOSIT = 250        # أدنى حد للشحن (250 ليرة جديدة)
+MIN_WITHDRAW = 500       # أدنى حد للسحب (500 ليرة جديدة)
 
 bot = telebot.TeleBot(API_TOKEN)
+
+# =========================================================
+# 🛡️ دالة فحص وضع الصيانة
+# =========================================================
+def check_maintenance(message):
+    if SETTINGS["maintenance"]:
+        bot.send_message(
+            message.chat.id, 
+            "⚠️ **البوت قيد الصيانة حالياً!**\n\nنعمل على تحديث وتطوير النظام، يرجى المحاولة لاحقاً.",
+            parse_mode="Markdown"
+        )
+        return True
+    return False
+
+# =========================================================
+# 👑 لوحة التحكم بالإدارة (لوضع الصيانة وتغيير العناوين)
+# =========================================================
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    status = "🔴 مفعّل" if SETTINGS["maintenance"] else "🟢 معطّل"
+    text = (
+        f"⚙️ **لوحة تحكم الإدارة:**\n\n"
+        f"🛠 **وضع الصيانة:** {status}\n"
+        f"💳 **شام كاش الحالي:** `{SETTINGS['sham_cash']}`\n"
+        f"📱 **سيرياتل كاش الحالي:** `{SETTINGS['syriatel_cash']}`\n\n"
+        f"📌 **الأوامر السريعة للتحكم:**\n"
+        f"• `/maintenance_on` - تشغيل وضع الصيانة\n"
+        f"• `/maintenance_off` - إيقاف وضع الصيانة\n"
+        f"• `/set_sham 09xx...` - تغيير عنوان شام كاش\n"
+        f"• `/set_syriatel 09xx...` - تغيير رقم سيرياتل كاش"
+    )
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+@bot.message_handler(commands=['maintenance_on'])
+def set_m_on(message):
+    SETTINGS["maintenance"] = True
+    bot.send_message(message.chat.id, "✅ تم تفعيل وضع الصيانة! البوت مغلق الآن أمام المستخدمين.")
+
+@bot.message_handler(commands=['maintenance_off'])
+def set_m_off(message):
+    SETTINGS["maintenance"] = False
+    bot.send_message(message.chat.id, "✅ تم إيقاف وضع الصيانة! البوت يعمل الآن بشكل طبيعي.")
+
+@bot.message_handler(commands=['set_sham'])
+def set_sham_cash(message):
+    new_val = message.text.replace('/set_sham', '').strip()
+    if new_val:
+        SETTINGS["sham_cash"] = new_val
+        bot.send_message(message.chat.id, f"✅ تم تحديث شام كاش إلى: `{new_val}`", parse_mode="Markdown")
+
+@bot.message_handler(commands=['set_syriatel'])
+def set_syriatel_cash(message):
+    new_val = message.text.replace('/set_syriatel', '').strip()
+    if new_val:
+        SETTINGS["syriatel_cash"] = new_val
+        bot.send_message(message.chat.id, f"✅ تم تحديث سيرياتل كاش إلى: `{new_val}`", parse_mode="Markdown")
 
 # =========================================================
 # 📱 القائمة الرئيسية للأزرار
@@ -54,6 +111,8 @@ def main_keyboard():
 # =========================================================
 @bot.message_handler(commands=['start'])
 def send_terms(message):
+    if check_maintenance(message): return
+    
     markup = types.InlineKeyboardMarkup()
     btn_accept = types.InlineKeyboardButton("✅ موافقة على الشروط", callback_data="accept_terms")
     markup.add(btn_accept)
@@ -88,11 +147,10 @@ def terms_accepted(call):
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "👤 إنشاء حساب")
 def handle_create_account(message):
+    if check_maintenance(message): return
     user_id = message.from_user.id
     default_username = f"user_{user_id}"
     default_password = f"Pass_{user_id}!2026"
-    
-    msg = bot.send_message(message.chat.id, "⏳ **جاري إنشاء حسابك الخاص على iChancy...**")
     
     text = (
         f"🎉 **تم إنشاء حسابك بنجاح!**\n\n"
@@ -101,17 +159,15 @@ def handle_create_account(message):
         f"🔑 **كلمة السر:** `{default_password}`\n"
         f"🏢 **الوكيل:** `{AGENT_ID}`"
     )
-
-    bot.edit_message_text(text, chat_id=message.chat.id, message_id=msg.message_id, parse_mode="Markdown")
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 # =========================================================
-# 🎰 عجلة الفرصة (دوارة وتفاعلية بخانة خاصة)
+# 🎰 عجلة الفرصة (دوارة وتفاعلية)
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "🎰 عجلة الفرصة")
 def spin_wheel(message):
+    if check_maintenance(message): return
     msg = bot.send_message(message.chat.id, "🌀 **جاري تدوير العجلة...** 🎯")
-    time.sleep(1.5)
-    bot.edit_message_text("🔄 **العجلة تدور الآن...** 🎰", chat_id=message.chat.id, message_id=msg.message_id)
     time.sleep(1.5)
     
     prizes = [0, 10, 25, 50, 100]
@@ -127,12 +183,13 @@ def spin_wheel(message):
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "💳 شحن الرصيد")
 def deposit_info(message):
+    if check_maintenance(message): return
     text = (
         f"📥 **قسم شحن الرصيد**\n\n"
         f"⚠️ **الحد الأدنى للشحن:** {MIN_DEPOSIT} ليرة جديدة (تعادل {MIN_DEPOSIT * 100} قديمة).\n\n"
         f"📍 **عناوين الدفع المتاحة:**\n"
-        f"• **شام كاش:** `{SHAM_CASH_ACCOUNT}`\n"
-        f"• **سيرياتل كاش:** `{SYRIATEL_CASH_ACCOUNT}`\n\n"
+        f"• **شام كاش:** `{SETTINGS['sham_cash']}`\n"
+        f"• **سيرياتل كاش:** `{SETTINGS['syriatel_cash']}`\n\n"
         f"🛑 **تنبيه شام كاش:** عند التحويل لا تقم أبداً بإرسال ملاحظات تجنباً للحظر.\n\n"
         f"بعد التحويل أرسل صورة الإشعار هنا لتأكيد الشحن."
     )
@@ -143,6 +200,7 @@ def deposit_info(message):
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "💸 سحب الرصيد")
 def withdraw_info(message):
+    if check_maintenance(message): return
     text = (
         f"📤 **قسم سحب الرصيد**\n\n"
         f"⚠️ **الحد الأدنى للسحب:** {MIN_WITHDRAW} ليرة جديدة (تعادل {MIN_WITHDRAW * 100} قديمة).\n\n"
@@ -159,7 +217,8 @@ def withdraw_info(message):
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "👥 نظام الإحالات")
 def referral_info(message):
-    user_link = f"{BOT_REFERRAL_BASE_URL}{message.from_user.id}"
+    if check_maintenance(message): return
+    user_link = f"{SETTINGS['referral_url']}{message.from_user.id}"
     text = (
         f"👥 **نظام الإحالات ودعوة الأصدقاء:**\n\n"
         f"⚠️ تُحتسب أرباح الإحالة فقط بعد تسجيل **3 إحالات نشطة** أو أكثر (قاموا بالتعبئة الفعلية).\n\n"
@@ -172,6 +231,7 @@ def referral_info(message):
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "📊 حسابي والمعلومات")
 def show_account_info(message):
+    if check_maintenance(message): return
     text = (
         f"📊 **تفاصيل حسابك:**\n\n"
         f"🆔 **الحساب الخاص (ID):** `{message.from_user.id}`\n"
