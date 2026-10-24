@@ -425,7 +425,7 @@ def wheel_page():
     """
 
 # =========================================================
-# 💳 نظام شحن الرصيد التفاعلي
+# 💳 نظام شحن الرصيد التفاعلي (مقاوم للقطع على الهاتف)
 # =========================================================
 @bot.message_handler(func=lambda message: message.text == "💳 شحن الرصيد")
 def deposit_info(message):
@@ -453,4 +453,4 @@ def deposit_method_chosen(call):
     method = "شام كاش" if call.data == "dep_sham" else "سيرياتل كاش"
     details = SETTINGS['sham_cash'] if call.data == "dep_sham" else SETTINGS['syriatel_cash']
     
-    TEMP_DEPOSIT_DATA[user_id] = {"method": meth
+    # تم تقسيم السطر هن
