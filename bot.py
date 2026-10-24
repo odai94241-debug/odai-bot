@@ -5,22 +5,30 @@ import requests
 import telebot
 from flask import Flask, request
 
-# =========================================================
-# ⚙️ الإعدادات والبيانات الأساسية
-# =========================================================
 API_TOKEN = '8734379872:AAFpX_ZqN0_mdJhZW2gj1yiNYJDIAVUqp18' 
 AGENT_ID = "2826132-odai1@agents.nps"
 ICHANCY_API_URL = "https://agents.ichancy.com/api/create_player"
 
 SETTINGS = {
     "maintenance": False,
-    "sham_cash": "يرجى التواصل مع الإدارة (أو ضبطه عبر /admin)",
-    "syriatel_cash": "يرجى التواصل مع الإدارة (أو ضبطه عبر /admin)",
+    "sham_cash": "يرجى التواصل مع الإدارة",
+    "syriatel_cash": "يرجى التواصل مع الإدارة",
     "referral_url": "https://t.me/odairobertbot?start=",
     "deposit_bonus_active": False,
     "deposit_bonus_percentage": 10,
     "support_link": "https://t.me/odairobertbot"
 }
+
+# قوائم طرق الشحن والسحب التي يمكن للإدارة تعديلها وإضافتها
+CUSTOM_DEPOSIT_METHODS = {
+    "شام كاش (Sham Cash)": "يرجى ضبط العنوان من الإدارة",
+    "سيرياتل كاش (Syriatel Cash)": "يرجى ضبط الرقم من الإدارة"
+}
+
+CUSTOM_WITHDRAW_METHODS = [
+    "شام كاش",
+    "سيرياتل كاش"
+]
 
 MIN_DEPOSIT = 250        
 MIN_WITHDRAW = 500       
@@ -54,312 +62,12 @@ def webhook():
         update = telebot.types.Update.de_json(json_string)
         bot.process_new_updates([update])
     except Exception as e:
-        print(f"Error processing update: {e}")
+        print(f"Error: {e}")
     return "OK", 200
 
 @app.route('/')
 def index():
     return "Bot is running perfectly!", 200
-
-# =========================================================
-# 👑 لوحة تحكم الإدارة التفاعلية
-# =========================================================
-@bot.message_handler(commands=['admin'])
-def admin_panel(message):
-    ADMIN_IDS.add(message.chat.id)
-    show_admin_menu(message.chat.id)
-
-def show_admin_menu(chat_id, message_id=None):
-    m_status = "🔴 مفعّل (متوقف)" if SETTINGS["maintenance"] else "🟢 معطّل (يعمل)"
-    b_status = f"🟢 مفعّل ({SETTINGS['deposit_bonus_percentage']}%)" if SETTINGS["deposit_bonus_active"] else "🔴 معطّل"
-    
-    text = (
-        f"⚙️ **لوحة تحكم الإدارة التفاعلية:**\n\n"
-        f"🛠 **وضع الصيانة:** {m_status}\n"
-        f"🎯 **عرض بونص الإيداع:** {b_status}\n"
-        f"👥 **عدد المستخدمين:** `{len(USER_IDS)}`\n"
-        f"🎧 **رابط الدعم:** `{SETTINGS['support_link']}`\n"
-        f"💳 **شام كاش:** `{SETTINGS['sham_cash']}`\n"
-        f"📱 **سيرياتل كاش:** `{SETTINGS['syriatel_cash']}`\n\n"
-        f"👇 **اختر الإجراء المطلوب:**"
-    )
-    markup = telebot.types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        telebot.types.InlineKeyboardButton("📢 إرسال إعلان/عرض لجميع المستخدمين", callback_data="admin_broadcast"),
-        telebot.types.InlineKeyboardButton("🎧 تعيين/تعديل رابط أو معرف الدعم", callback_data="admin_set_support"),
-        telebot.types.InlineKeyboardButton("🔄 تبديل وضع الصيانة", callback_data="admin_toggle_m"),
-        telebot.types.InlineKeyboardButton("🎯 تفعيل/إيقاف بونص الإيداع (10%)", callback_data="admin_toggle_bonus"),
-        telebot.types.InlineKeyboardButton("💳 تغيير عنوان شام كاش", callback_data="admin_set_sham"),
-        telebot.types.InlineKeyboardButton("📱 تغيير رقم سيرياتل كاش", callback_data="admin_set_syriatel")
-    )
-    
-    if message_id:
-        try:
-            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=markup)
-            return
-        except Exception:
-            pass
-    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
-def admin_callbacks(call):
-    if call.data == "admin_broadcast":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "📢 أرسل الإعلان الآن (نص أو صورة مع نص):", parse_mode="Markdown")
-        bot.register_next_step_handler(msg, execute_broadcast)
-    elif call.data == "admin_set_support":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "🎧 أرسل رابط أو معرف الدعم الجديد:")
-        bot.register_next_step_handler(msg, save_new_support)
-    elif call.data == "admin_toggle_m":
-        SETTINGS["maintenance"] = not SETTINGS["maintenance"]
-        bot.answer_callback_query(call.id, "✅ تم التغيير!")
-        show_admin_menu(call.message.chat.id, call.message.message_id)
-    elif call.data == "admin_toggle_bonus":
-        SETTINGS["deposit_bonus_active"] = not SETTINGS["deposit_bonus_active"]
-        bot.answer_callback_query(call.id, "✅ تم التغيير!")
-        show_admin_menu(call.message.chat.id, call.message.message_id)
-    elif call.data == "admin_set_sham":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "💳 أرسل عنوان شام كاش الجديد:")
-        bot.register_next_step_handler(msg, save_new_sham)
-    elif call.data == "admin_set_syriatel":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "📱 أرسل رقم سيرياتل كاش الجديد:")
-        bot.register_next_step_handler(msg, save_new_syriatel)
-
-def execute_broadcast(message):
-    success, fail = 0, 0
-    bot.send_message(message.chat.id, "⏳ جاري إرسال الإذاعة...")
-    for uid in USER_IDS:
-        try:
-            if message.photo:
-                bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption or "", parse_mode="Markdown")
-            else:
-                bot.send_message(uid, message.text, parse_mode="Markdown")
-            success += 1
-        except Exception:
-            fail += 1
-    bot.send_message(message.chat.id, f"📊 تم الإرسال بنجاح إلى: {success} | فشل: {fail}")
-    show_admin_menu(message.chat.id)
-
-def save_new_support(message):
-    SETTINGS["support_link"] = message.text.strip()
-    bot.send_message(message.chat.id, "✅ تم تحديث الدعم بنجاح.")
-    show_admin_menu(message.chat.id)
-
-def save_new_sham(message):
-    SETTINGS["sham_cash"] = message.text.strip()
-    bot.send_message(message.chat.id, "✅ تم تحديث شام كاش بنجاح.")
-    show_admin_menu(message.chat.id)
-
-def save_new_syriatel(message):
-    SETTINGS["syriatel_cash"] = message.text.strip()
-    bot.send_message(message.chat.id, "✅ تم تحديث سيرياتل كاش بنجاح.")
-    show_admin_menu(message.chat.id)
-
-# =========================================================
-# مراجعة طلبات الشحن
-# =========================================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("dep_acc_") or call.data.startswith("dep_rej_"))
-def handle_deposit_review(call):
-    data_parts = call.data.split("_")
-    action = data_parts[1]
-    req_id = data_parts[2]
-    
-    if req_id not in PENDING_DEPOSITS:
-        bot.answer_callback_query(call.id, "⚠️ هذا الطلب غير موجود أو تم معالجته مسبقاً.")
-        return
-        
-    dep_info = PENDING_DEPOSITS[req_id]
-    user_id = dep_info["user_id"]
-    amount = float(dep_info["amount"])
-    
-    final_amount = amount
-    if SETTINGS["deposit_bonus_active"]:
-        final_amount += amount * (SETTINGS["deposit_bonus_percentage"] / 100)
-        
-    if action == "acc":
-        USER_BALANCES[user_id] = USER_BALANCES.get(user_id, 0) + final_amount
-        bot.answer_callback_query(call.id, "✅ تمت الموافقة وإضافة الرصيد بنجاح!")
-        bot.edit_message_text(
-            call.message.text + f"\n\n🟢 **الحالة:** تم قبول الطلب وإضافة {final_amount} ليرة.",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown"
-        )
-        bot.send_message(
-            user_id,
-            f"🎉 **مبروك! تم قبول عملية الشحن الخاصة بك وإضافة الرصيد بنجاح.**\n\n"
-            f"💰 المبلغ المضاف: `{final_amount}` ليرة جديدة",
-            parse_mode="Markdown"
-        )
-        del PENDING_DEPOSITS[req_id]
-        
-    elif action == "rej":
-        bot.answer_callback_query(call.id, "❌ أرسل سبب الرفض للزبون:")
-        ADMIN_STATES[call.message.chat.id] = {"target_user": user_id, "req_id": req_id}
-        msg = bot.send_message(call.message.chat.id, "✍️ أرسل الآن سبب فشل العملية (مثال: رقم العملية خطأ أو القيمة غير مطابقة):")
-        bot.register_next_step_handler(msg, process_admin_rejection_reason)
-
-def process_admin_rejection_reason(message):
-    admin_id = message.chat.id
-    if admin_id not in ADMIN_STATES:
-        return
-        
-    reason = message.text.strip()
-    state = ADMIN_STATES[admin_id]
-    user_id = state["target_user"]
-    req_id = state["req_id"]
-    
-    bot.send_message(
-        user_id,
-        f"❌ **عذراً، فشلت عملية الشحن الخاصة بك!**\n\n"
-        f"⚠️ **السبب:** {reason}\n\n"
-        f"يرجى التأكد من البيانات وإعادة المحاولة أو التواصل مع الدعم الفني.",
-        parse_mode="Markdown"
-    )
-    bot.send_message(admin_id, "✅ تم إرسال سبب الرفض إلى الزبون بنجاح.")
-    
-    if req_id in PENDING_DEPOSITS:
-        del PENDING_DEPOSITS[req_id]
-    del ADMIN_STATES[admin_id]
-
-def main_keyboard():
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(
-        telebot.types.KeyboardButton("👤 إنشاء حساب"),
-        telebot.types.KeyboardButton("💳 شحن الرصيد"),
-        telebot.types.KeyboardButton("💸 سحب الرصيد"),
-        telebot.types.KeyboardButton("🎰 عجلة الفرصة"),
-        telebot.types.KeyboardButton("🎁 إهداء صديق"),
-        telebot.types.KeyboardButton("👥 نظام الإحالات"),
-        telebot.types.KeyboardButton("🎁 قسم الهدايا"),
-        telebot.types.KeyboardButton("📊 حسابي والمعلومات"),
-        telebot.types.KeyboardButton("📜 شروط الاستخدام"),
-        telebot.types.KeyboardButton("🎧 خدمة الدعم"),
-        telebot.types.KeyboardButton("🗑 طلب حذف الحساب")
-    )
-    return markup
-
-@bot.message_handler(commands=['start'])
-def send_terms(message):
-    USER_IDS.add(message.chat.id)
-    if check_maintenance(message): return
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("✅ موافقة على الشروط", callback_data="accept_terms"))
-    terms_text = (
-        "مرحباً بك. يرجى قراءة الشروط والأحكام قبل البدء:\n\n"
-        "1️⃣ منع الحسابات المتعددة.\n"
-        "2️⃣ تبديل طرق الدفع غير مسموح.\n"
-        "3️⃣ نسب عمولة السحب: 10% حتى 50M، 15% حتى 150M، 20% فوق 150M.\n"
-        "4️⃣ تأكد من عناوين الدفع بدقة وعدم إرسال ملاحظات في شام كاش."
-    )
-    bot.send_message(message.chat.id, terms_text, reply_markup=markup, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data == "accept_terms")
-def terms_accepted(call):
-    USER_IDS.add(call.message.chat.id)
-    bot.answer_callback_query(call.id, "تم قبول الشروط!")
-    bot.send_message(call.message.chat.id, "أهلاً بك!", reply_markup=main_keyboard())
-
-@bot.message_handler(func=lambda message: message.text == "🎧 خدمة الدعم")
-def support_contact(message):
-    USER_IDS.add(message.chat.id)
-    if check_maintenance(message): return
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("💬 تواصل مع الدعم الفني", url=SETTINGS["support_link"]))
-    bot.send_message(message.chat.id, "🎧 للتواصل مع الدعم الفني:", reply_markup=markup, parse_mode="Markdown")
-
-# =========================================================
-# 👤 إنشاء حساب تفاعلي
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "👤 إنشاء حساب")
-def ask_username(message):
-    USER_IDS.add(message.chat.id)
-    if check_maintenance(message): return
-    msg = bot.send_message(message.chat.id, "👤 أرسل **اسم المستخدم (Username)** الذي ترغب به:", parse_mode="Markdown")
-    bot.register_next_step_handler(msg, process_custom_username)
-
-def process_custom_username(message):
-    if message.text in ["👤 إنشاء حساب", "💳 شحن الرصيد", "💸 سحب الرصيد", "🎰 عجلة الفرصة", "📊 حسابي والمعلومات", "📜 شروط الاستخدام", "🎧 خدمة الدعم"]:
-        bot.send_message(message.chat.id, "تم الإلغاء.", reply_markup=main_keyboard())
-        return
-    
-    username = message.text.strip()
-    if len(username) < 3:
-        msg = bot.send_message(message.chat.id, "❌ اسم المستخدم قصير جداً (3 أحرف على الأقل). أعد المحاولة:")
-        bot.register_next_step_handler(msg, process_custom_username)
-        return
-
-    if username in REGISTERED_USERNAMES:
-        msg = bot.send_message(message.chat.id, "⚠️ **اسم المستخدم هذا مستخدم مسبقاً!**\nالرجاء إرسال اسم مستخدم آخر:")
-        bot.register_next_step_handler(msg, process_custom_username)
-        return
-
-    TEMP_USER_DATA[message.chat.id] = {"username": username}
-
-    msg = bot.send_message(message.chat.id, "🔑 ممتاز. الآن أرسل **كلمة السر (Password)** التي ترغب بها لحسابك:", parse_mode="Markdown")
-    bot.register_next_step_handler(msg, process_custom_password)
-
-def process_custom_password(message):
-    if message.text in ["👤 إنشاء حساب", "💳 شحن الرصيد", "💸 سحب الرصيد", "🎰 عجلة الفرصة", "📊 حسابي والمعلومات", "📜 شروط الاستخدام", "🎧 خدمة الدعم"]:
-        bot.send_message(message.chat.id, "تم الإلغاء.", reply_markup=main_keyboard())
-        return
-
-    password = message.text.strip()
-    if len(password) < 4:
-        msg = bot.send_message(message.chat.id, "❌ كلمة السر قصيرة جداً (4 خانات على الأقل). أعد المحاولة:")
-        bot.register_next_step_handler(msg, process_custom_password)
-        return
-
-    user_id = message.chat.id
-    username = TEMP_USER_DATA.get(user_id, {}).get("username")
-
-    REGISTERED_USERNAMES.add(username)
-
-    try:
-        payload = {
-            "agent_id": AGENT_ID,
-            "username": username,
-            "password": password,
-            "telegram_id": user_id
-        }
-        requests.post(ICHANCY_API_URL, json=payload, timeout=10)
-    except Exception:
-        pass
-
-    text = (
-        f"🎉 **تم إنشاء حسابك وربطه بوكالتنا بنجاح!**\n\n"
-        f"🔗 **رابط الدخول:** https://ichancy.com\n"
-        f"👤 **اسم المستخدم:** `{username}`\n"
-        f"🔑 **كلمة السر:** `{password}`"
-    )
-    bot.send_message(user_id, text, parse_mode="Markdown", reply_markup=main_keyboard())
-
-    if user_id in TEMP_USER_DATA:
-        del TEMP_USER_DATA[user_id]
-
-# =========================================================
-# 🎰 عجلة الفرصة التفاعلية (Web App)
-# =========================================================
-@bot.message_handler(func=lambda message: message.text == "🎰 عجلة الفرصة")
-def spin_wheel_webapp(message):
-    USER_IDS.add(message.chat.id)
-    if check_maintenance(message): return
-    
-    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
-    wheel_url = f"{render_url}/wheel"
-    
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("🎡 اضغط لفتح العجلة وتدويرها", web_app=telebot.types.WebAppInfo(url=wheel_url)))
-    
-    bot.send_message(
-        message.chat.id, 
-        "🎰 **عجلة الفرصة الكبرى**\n\nاضغط على الزر أدناه لفتح العجلة وتدويرها أمام عينك لتربح الجوائز!", 
-        reply_markup=markup, 
-        parse_mode="Markdown"
-    )
 
 @app.route('/wheel')
 def wheel_page():
@@ -428,30 +136,284 @@ def wheel_page():
     """
 
 # =========================================================
-# 💳 نظام شحن الرصيد التفاعلي
+# 👑 لوحة تحكم الإدارة
 # =========================================================
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    ADMIN_IDS.add(message.chat.id)
+    show_admin_menu(message.chat.id)
+
+def show_admin_menu(chat_id, message_id=None):
+    m_status = "🔴 مفعّل (متوقف)" if SETTINGS["maintenance"] else "🟢 معطّل (يعمل)"
+    b_status = f"🟢 مفعّل ({SETTINGS['deposit_bonus_percentage']}%)" if SETTINGS["deposit_bonus_active"] else "🔴 معطّل"
+    
+    text = (
+        f"⚙️ **لوحة تحكم الإدارة:**\n\n"
+        f"🛠 **وضع الصيانة:** {m_status}\n"
+        f"🎯 **بونص الإيداع:** {b_status}\n"
+        f"💳 **طرق الشحن:** `{list(CUSTOM_DEPOSIT_METHODS.keys())}`\n"
+        f"💸 **طرق السحب:** `{CUSTOM_WITHDRAW_METHODS}`\n\n"
+        f"👇 **اختر الإجراء:**"
+    )
+    markup = telebot.types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        telebot.types.InlineKeyboardButton("➕ إضافة طريقة شحن جديدة", callback_data="admin_add_dep"),
+        telebot.types.InlineKeyboardButton("➕ إضافة طريقة سحب جديدة", callback_data="admin_add_wdr"),
+        telebot.types.InlineKeyboardButton("➕ إضافة رصيد يدوي لـ ID", callback_data="admin_add_bal"),
+        telebot.types.InlineKeyboardButton("➖ خصم رصيد يدوي من ID", callback_data="admin_sub_bal"),
+        telebot.types.InlineKeyboardButton("📢 إرسال إعلان للكل", callback_data="admin_broadcast"),
+        telebot.types.InlineKeyboardButton("🔄 تبديل وضع الصيانة", callback_data="admin_toggle_m"),
+        telebot.types.InlineKeyboardButton("🎯 تفعيل/إيقاف البونص", callback_data="admin_toggle_bonus")
+    )
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=markup)
+            return
+        except Exception:
+            pass
+    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
+def admin_callbacks(call):
+    if call.data == "admin_add_dep":
+        bot.answer_callback_query(call.id)
+        ADMIN_STATES[call.message.chat.id] = {"action": "new_dep_name"}
+        msg = bot.send_message(call.message.chat.id, "💳 أرسل **اسم طريقة الشحن الجديدة**:")
+        bot.register_next_step_handler(msg, process_new_dep_name)
+    elif call.data == "admin_add_wdr":
+        bot.answer_callback_query(call.id)
+        ADMIN_STATES[call.message.chat.id] = {"action": "new_wdr_name"}
+        msg = bot.send_message(call.message.chat.id, "💸 أرسل **اسم طريقة السحب الجديدة**:")
+        bot.register_next_step_handler(msg, process_new_wdr_name)
+    elif call.data == "admin_add_bal":
+        bot.answer_callback_query(call.id)
+        ADMIN_STATES[call.message.chat.id] = {"action": "add_bal_id"}
+        msg = bot.send_message(call.message.chat.id, "➕ أرسل **معرف المستخدم (Telegram ID)** لإضافة الرصيد:")
+        bot.register_next_step_handler(msg, process_admin_bal_id)
+    elif call.data == "admin_sub_bal":
+        bot.answer_callback_query(call.id)
+        ADMIN_STATES[call.message.chat.id] = {"action": "sub_bal_id"}
+        msg = bot.send_message(call.message.chat.id, "➖ أرسل **معرف المستخدم (Telegram ID)** لخصم الرصيد:")
+        bot.register_next_step_handler(msg, process_admin_bal_id)
+    elif call.data == "admin_broadcast":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "📢 أرسل الإعلان الآن:", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, execute_broadcast)
+    elif call.data == "admin_toggle_m":
+        SETTINGS["maintenance"] = not SETTINGS["maintenance"]
+        bot.answer_callback_query(call.id, "✅ تم التغيير!")
+        show_admin_menu(call.message.chat.id, call.message.message_id)
+    elif call.data == "admin_toggle_bonus":
+        SETTINGS["deposit_bonus_active"] = not SETTINGS["deposit_bonus_active"]
+        bot.answer_callback_query(call.id, "✅ تم التغيير!")
+        show_admin_menu(call.message.chat.id, call.message.message_id)
+
+def process_new_dep_name(message):
+    admin_id = message.chat.id
+    name = message.text.strip()
+    ADMIN_STATES[admin_id]["dep_name"] = name
+    ADMIN_STATES[admin_id]["action"] = "new_dep_details"
+    msg = bot.send_message(admin_id, f"📍 أرسل **العنوان أو الرقم المخصص** لـ ({name}):")
+    bot.register_next_step_handler(msg, process_new_dep_details)
+
+def process_new_dep_details(message):
+    admin_id = message.chat.id
+    details = message.text.strip()
+    dep_name = ADMIN_STATES[admin_id]["dep_name"]
+    CUSTOM_DEPOSIT_METHODS[dep_name] = details
+    bot.send_message(admin_id, f"✅ تمت إضافة طريقة الشحن ({dep_name}) بنجاح!")
+    del ADMIN_STATES[admin_id]
+    show_admin_menu(admin_id)
+
+def process_new_wdr_name(message):
+    admin_id = message.chat.id
+    name = message.text.strip()
+    CUSTOM_WITHDRAW_METHODS.append(name)
+    bot.send_message(admin_id, f"✅ تمت إضافة طريقة السحب ({name}) بنجاح!")
+    del ADMIN_STATES[admin_id]
+    show_admin_menu(admin_id)
+
+def process_admin_bal_id(message):
+    admin_id = message.chat.id
+    if admin_id not in ADMIN_STATES: return
+    try:
+        target_user = int(message.text.strip())
+        ADMIN_STATES[admin_id]["target_user"] = target_user
+        action_type = ADMIN_STATES[admin_id]["action"]
+        if "add" in action_type:
+            ADMIN_STATES[admin_id]["action"] = "add_bal_amount"
+            msg = bot.send_message(admin_id, "💰 أرسل **المبلغ المراد إضافته**:")
+        else:
+            ADMIN_STATES[admin_id]["action"] = "sub_bal_amount"
+            msg = bot.send_message(admin_id, "💸 أرسل **المبلغ المراد خصمه**:")
+        bot.register_next_step_handler(msg, process_admin_bal_amount)
+    except ValueError:
+        msg = bot.send_message(admin_id, "❌ المعرف غير صحيح. أرسل رقم ID صحيح:")
+        bot.register_next_step_handler(msg, process_admin_bal_id)
+
+def process_admin_bal_amount(message):
+    admin_id = message.chat.id
+    if admin_id not in ADMIN_STATES: return
+    try:
+        amount = float(message.text.strip())
+        state = ADMIN_STATES[admin_id]
+        target_user = state["target_user"]
+        action_type = state["action"]
+        if "add" in action_type:
+            USER_BALANCES[target_user] = USER_BALANCES.get(target_user, 0) + amount
+            bot.send_message(admin_id, f"✅ تم إضافة {amount} للمستخدم `{target_user}`.", parse_mode="Markdown")
+            try: bot.send_message(target_user, f"🎉 **تم شحن حسابك بواسطة الإدارة!**\n💰 المبلغ: `{amount}`", parse_mode="Markdown")
+            except Exception: pass
+        else:
+            USER_BALANCES[target_user] = max(0, USER_BALANCES.get(target_user, 0) - amount)
+            bot.send_message(admin_id, f"✅ تم خصم {amount} من المستخدم `{target_user}`.", parse_mode="Markdown")
+            try: bot.send_message(target_user, f"⚠️ **تم خصم مبلغ من رصيدك بواسطة الإدارة.**\n💸 المبلغ: `{amount}`", parse_mode="Markdown")
+            except Exception: pass
+        del ADMIN_STATES[admin_id]
+        show_admin_menu(admin_id)
+    except ValueError:
+        msg = bot.send_message(admin_id, "❌ القيمة غير صحيحة:")
+        bot.register_next_step_handler(msg, process_admin_bal_amount)
+
+def execute_broadcast(message):
+    success, fail = 0, 0
+    bot.send_message(message.chat.id, "⏳ جاري الإرسال...")
+    for uid in USER_IDS:
+        try:
+            if message.photo: bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption or "", parse_mode="Markdown")
+            else: bot.send_message(uid, message.text, parse_mode="Markdown")
+            success += 1
+        except Exception: fail += 1
+    bot.send_message(message.chat.id, f"📊 تم بنجاح: {success} | فشل: {fail}")
+    show_admin_menu(message.chat.id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("dep_acc_") or call.data.startswith("dep_rej_"))
+def handle_deposit_review(call):
+    data_parts = call.data.split("_")
+    action = data_parts[1]
+    req_id = data_parts[2]
+    if req_id not in PENDING_DEPOSITS:
+        bot.answer_callback_query(call.id, "⚠️ الطلب غير موجود.")
+        return
+    dep_info = PENDING_DEPOSITS[req_id]
+    user_id = dep_info["user_id"]
+    amount = float(dep_info["amount"])
+    final_amount = amount + (amount * (SETTINGS["deposit_bonus_percentage"] / 100)) if SETTINGS["deposit_bonus_active"] else amount
+    
+    if action == "acc":
+        USER_BALANCES[user_id] = USER_BALANCES.get(user_id, 0) + final_amount
+        bot.answer_callback_query(call.id, "✅ تمت الموافقة!")
+        bot.edit_message_text(call.message.text + f"\n\n🟢 **الحالة:** تم القبول وإضافة {final_amount}", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown")
+        bot.send_message(user_id, f"🎉 **تم قبول الشحن وإضافة `{final_amount}` ليرة!**", parse_mode="Markdown")
+        del PENDING_DEPOSITS[req_id]
+    elif action == "rej":
+        bot.answer_callback_query(call.id, "❌ أرسل سبب الرفض:")
+        ADMIN_STATES[call.message.chat.id] = {"target_user": user_id, "req_id": req_id}
+        msg = bot.send_message(call.message.chat.id, "✍️ أرسل سبب رفض الشحن:")
+        bot.register_next_step_handler(msg, process_admin_rejection_reason)
+
+def process_admin_rejection_reason(message):
+    admin_id = message.chat.id
+    if admin_id not in ADMIN_STATES: return
+    reason = message.text.strip()
+    state = ADMIN_STATES[admin_id]
+    user_id = state["target_user"]
+    req_id = state["req_id"]
+    bot.send_message(user_id, f"❌ **عذراً، فشلت عملية الشحن!**\n\n⚠️ **السبب:** {reason}", parse_mode="Markdown")
+    bot.send_message(admin_id, "✅ تم إرسال السبب للزبون.")
+    if req_id in PENDING_DEPOSITS: del PENDING_DEPOSITS[req_id]
+    del ADMIN_STATES[admin_id]
+
+def main_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("👤 إنشاء حساب"),
+        telebot.types.KeyboardButton("💳 شحن الرصيد"),
+        telebot.types.KeyboardButton("💸 سحب الرصيد"),
+        telebot.types.KeyboardButton("🎰 عجلة الفرصة"),
+        telebot.types.KeyboardButton("📊 حسابي والمعلومات"),
+        telebot.types.KeyboardButton("📜 شروط الاستخدام"),
+        telebot.types.KeyboardButton("🎧 خدمة الدعم")
+    )
+    return markup
+
+@bot.message_handler(commands=['start'])
+def send_terms(message):
+    USER_IDS.add(message.chat.id)
+    if check_maintenance(message): return
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("✅ موافقة على الشروط", callback_data="accept_terms"))
+    bot.send_message(message.chat.id, "مرحباً بك. يرجى قراءة الشروط والأحكام قبل البدء:", reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data == "accept_terms")
+def terms_accepted(call):
+    USER_IDS.add(call.message.chat.id)
+    bot.answer_callback_query(call.id, "تم القبول!")
+    bot.send_message(call.message.chat.id, "أهلاً بك!", reply_markup=main_keyboard())
+
+@bot.message_handler(func=lambda message: message.text == "🎧 خدمة الدعم")
+def support_contact(message):
+    USER_IDS.add(message.chat.id)
+    if check_maintenance(message): return
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("💬 تواصل مع الدعم الفني", url=SETTINGS["support_link"]))
+    bot.send_message(message.chat.id, "🎧 للتواصل مع الدعم الفني:", reply_markup=markup, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda message: message.text == "👤 إنشاء حساب")
+def ask_username(message):
+    USER_IDS.add(message.chat.id)
+    if check_maintenance(message): return
+    msg = bot.send_message(message.chat.id, "👤 أرسل **اسم المستخدم (Username)**:", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, process_custom_username)
+
+def process_custom_username(message):
+    if message.text.startswith('/'): return
+    username = message.text.strip()
+    if len(username) < 3:
+        msg = bot.send_message(message.chat.id, "❌ قصير جداً. أعد المحاولة:")
+        bot.register_next_step_handler(msg, process_custom_username)
+        return
+    if username in REGISTERED_USERNAMES:
+        msg = bot.send_message(message.chat.id, "⚠️ مستخدم مسبقاً! أرسل اسم آخر:")
+        bot.register_next_step_handler(msg, process_custom_username)
+        return
+    TEMP_USER_DATA[message.chat.id] = {"username": username}
+    msg = bot.send_message(message.chat.id, "🔑 أرسل **كلمة السر (Password)**:", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, process_custom_password)
+
+def process_custom_password(message):
+    if message.text.startswith('/'): return
+    password = message.text.strip()
+    if len(password) < 4:
+        msg = bot.send_message(message.chat.id, "❌ قصيرة جداً. أعد المحاولة:")
+        bot.register_next_step_handler(msg, process_custom_password)
+        return
+    user_id = message.chat.id
+    username = TEMP_USER_DATA.get(user_id, {}).get("username")
+    REGISTERED_USERNAMES.add(username)
+    try:
+        payload = {"agent_id": AGENT_ID, "username": username, "password": password, "telegram_id": user_id}
+        requests.post(ICHANCY_API_URL, json=payload, timeout=10)
+    except Exception: pass
+    text = f"🎉 **تم إنشاء حسابك بنجاح!**\n\n🔗 https://ichancy.com\n👤 `{username}`\n🔑 `{password}`"
+    bot.send_message(user_id, text, parse_mode="Markdown", reply_markup=main_keyboard())
+    if user_id in TEMP_USER_DATA: del TEMP_USER_DATA[user_id]
+
+@bot.message_handler(func=lambda message: message.text == "🎰 عجلة الفرصة")
+def spin_wheel_webapp(message):
+    USER_IDS.add(message.chat.id)
+    if check_maintenance(message): return
+    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
+    wheel_url = f"{render_url}/wheel"
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("🎡 اضغط لفتح العجلة", web_app=telebot.types.WebAppInfo(url=wheel_url)))
+    bot.send_message(message.chat.id, "🎰 **عجلة الفرصة الكبرى**", reply_markup=markup, parse_mode="Markdown")
+
 @bot.message_handler(func=lambda message: message.text == "💳 شحن الرصيد")
 def deposit_info(message):
     USER_IDS.add(message.chat.id)
     if check_maintenance(message): return
-    
     markup = telebot.types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        telebot.types.InlineKeyboardButton("💳 شام كاش (Sham Cash)", callback_data="dep_sham"),
-        telebot.types.InlineKeyboardButton("📱 سيرياتل كاش (Syriatel Cash)", callback_data="dep_syriatel")
-    )
-    
-    bot.send_message(
-        message.chat.id, 
-        "📥 **قسم شحن الرصيد**\n\nالرجاء اختيار **طريقة الدفع** التي تريد الشحن من خلالها:", 
-        reply_markup=markup, 
-        parse_mode="Markdown"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data in ["dep_sham", "dep_syriatel"])
-def deposit_method_chosen(call):
-    bot.answer_callback_query(call.id)
-    user_id = call.message.chat.id
-    
-    method = "شام كاش" if call.data == "dep_sham" else "سيرياتل كاش"
-    details = SETTINGS['sham_cash'] if call.data == "dep_sham" else SET
+    for method_name in CUSTOM_DEPOSIT_METHODS.keys():
+        markup.add(telebot.types.InlineKeyboardButton(f"💳 {method_name}", callback_data=f"dep_custom_{method_name}"))
+    bot.send_message(message.chat.id, "📥 **اختر طريقة الدفع:**", reply_markup=markup, parse_mode="
