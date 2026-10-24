@@ -6,7 +6,7 @@ import telebot
 from flask import Flask, request
 
 # =========================================================
-# ⚙️ الإعدادات والبيانات الخاصة بك والربط مع iChancy
+# ⚙️ الإعدادات والبيانات الأساسية
 # =========================================================
 API_TOKEN = '8734379872:AAFpX_ZqN0_mdJhZW2gj1yiNYJDIAVUqp18' 
 AGENT_ID = "2826132-odai1@agents.nps"
@@ -49,9 +49,12 @@ def check_maintenance(message):
 
 @app.route(f'/{API_TOKEN}', methods=['POST'])
 def webhook():
-    json_string = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
+    try:
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+    except Exception as e:
+        print(f"Error processing update: {e}")
     return "OK", 200
 
 @app.route('/')
@@ -451,7 +454,4 @@ def deposit_method_chosen(call):
     user_id = call.message.chat.id
     
     method = "شام كاش" if call.data == "dep_sham" else "سيرياتل كاش"
-    details = SETTINGS['sham_cash'] if call.data == "dep_sham" else SETTINGS['syriatel_cash']
-    
-    TEMP_DEPOSIT_DATA[user_id] = {}
-    TEMP_DEP
+    details = SETTINGS['sham_cash'] if call.data == "dep_sham" else SET
